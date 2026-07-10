@@ -1,0 +1,39 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# production
+/build
+
+# misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Credenciales sensibles - NUNCA subir a git
+admin-key.json
+*-firebase-adminsdk-*.json
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Caché local de la CLI de Firebase (no es código del proyecto)
+/.firebase
+
+# Backups manuales y ficheros de verificación acumulados de sesiones
+# anteriores (a partir de ahora, git es el histórico real del proyecto —
+# ver commit inicial). No se borran del disco, solo se excluyen de git.
+backup-*/
+_backup_*/
+.cv*
+.claude_verify_*
+_test_parser_tmp.*

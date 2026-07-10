@@ -1,0 +1,59 @@
+/*
+ * firestore.rules
+ * Sincronizado con lo que hay REALMENTE publicado en la consola de Firebase
+ * (proyecto app-gestion-comercial-unesdi) a 2026-07-10, tras una auditoría en
+ * la que se detectó que este fichero local llevaba tiempo desactualizado
+ * respecto a lo desplegado — cubría solo 5 de las 8 colecciones que usa
+ * firebaseApi.js. Al comprobarlo con Sergio, las 3 que "faltaban aquí"
+ * (ventasReales, mapeoImportacion, stockInicialDistribuidor) SÍ estaban
+ * cubiertas en producción, con el mismo patrón privado-por-usuario que el
+ * resto. No hubo ningún hueco de seguridad real; solo desincronización entre
+ * este fichero y la consola. A partir de ahora, cualquier cambio de reglas
+ * debería aplicarse primero en la consola (o vía `firebase deploy
+ * --only firestore:rules`) y reflejarse aquí después, para que este fichero
+ * siga siendo un espejo fiable de lo publicado.
+ */
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // --- MARCAS (catálogo global, compartido por todos los usuarios) ---
+    match /marcas/{docId} {
+      allow read, create, delete: if request.auth != null;
+    }
+    // --- DISTRIBUIDORES (privado por usuario) ---
+    match /distribuidores/{docId} {
+      allow read, delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+    // --- HISTÓRICO SELL-IN (compras) ---
+    match /historicoSellIn/{docId} {
+      allow read, delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+    // --- HISTÓRICO SELL-OUT (ventas y A&P) ---
+    match /historicoSellOut/{docId} {
+      allow read, delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+    // --- VENTAS REALES (import mensual QlikSense) ---
+    match /ventasReales/{docId} {
+      allow read, delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+    // --- MEMORIA DE RECONCILIACIÓN DEL IMPORTADOR DE VENTAS REALES ---
+    match /mapeoImportacion/{docId} {
+      allow read, delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+    // --- STOCK INICIAL DECLARADO (columna "Stock Inicial" del Excel de liquidación) ---
+    match /stockInicialDistribuidor/{docId} {
+      allow read, delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+    match /tipologiasMarca/{tipologiaId} {
+  allow read: if request.auth != null;
+  allow create: if request.auth != null;
+  allow delete: if request.auth != null;
+    }
+  }
+}

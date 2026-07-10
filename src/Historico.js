@@ -1,0 +1,251 @@
+/*
+ * Historico.js (Versión 5.5 - Rediseño visual Fase 3)
+ * Cambios sobre la 5.4: solo la maquetación pasa a Tailwind CSS (con
+ * soporte de modo oscuro). La lógica de filtrado/borrado no cambia.
+ */
+
+import React, { useState, useEffect } from 'react';
+import { deleteDocument } from './firebaseApi';
+import * as XLSX from 'xlsx';
+import { valorRegaladas, valorMuestras, valorAcuerdo, unidadesAcuerdo, gastoTotal } from './calculosAP';
+import { inputClasses, botonSecundario, botonExito, botonPeligro, etiqueta, filtroContenedor, thClasses, tdClasses, tdRightClasses, trTotales } from './uiClasses';
+import SelectorMesAno from './SelectorMesAno';
+
+const formateadorMoneda = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
+
+function Historico({ idDistribuidor, marcas, listaDistribuidores, historicoSellOut, onDataDeleted }) {
+
+  const [cargando, setCargando] = useState(false);
+  const [mapaMarcas, setMapaMarcas] = useState(new Map());
+  const [movimientosFiltrados, setMovimientosFiltrados] = useState([]);
+  const [filtros, setFiltros] = useState({ fechaInicio: '', fechaFin: '', id_marca: '' });
+
+  useEffect(() => {
+    const mapaM = new Map();
+    marcas.forEach(m => mapaM.set(m.id, m.nombre_marca));
+    setMapaMarcas(mapaM);
+  }, [marcas]);
+
+  // Aplicar filtros
+  useEffect(() => {
+    setCargando(true);
+    const movsConCalculo = (historicoSellOut || []).map(mov => {
+      return {
+        ...mov,
+        valor_regaladas_calc: valorRegaladas(mov),
+        valor_muestras_calc: valorMuestras(mov),
+        valor_acuerdo_calc: valorAcuerdo(mov),
+        unidades_acuerdo_calc: unidadesAcuerdo(mov),
+        total_ap_movimiento: gastoTotal(mov)
+      };
+    });
+    movsConCalculo.sort((a, b) => (b.mes_ano || '').localeCompare(a.mes_ano || ''));
+
+    const filtrados = movsConCalculo.filter(mov => {
+      const matchMarca = !filtros.id_marca || mov.id_marca === filtros.id_marca;
+      const matchFechaInicio = !filtros.fechaInicio || mov.mes_ano >= filtros.fechaInicio;
+      const matchFechaFin = !filtros.fechaFin || mov.mes_ano <= filtros.fechaFin;
+      return matchMarca && matchFechaInicio && matchFechaFin;
+    });
+    setMovimientosFiltrados(filtrados);
+    setCargando(false);
+
+  }, [filtros, historicoSellOut]);
+
+  const handleFiltroChange = (e) => {
+    const { name, value } = e.target;
+    setFiltros(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleExportarExcel = () => {
+    if (movimientosFiltrados.length === 0) {
+      alert("No hay datos filtrados para exportar.");
+      return;
+    }
+    const distriNombre = listaDistribuidores.find(d => d.id === idDistribuidor)?.nombre_distribuidor || idDistribuidor;
+    const periodo = (filtros.fechaInicio || filtros.fechaFin)
+      ? `Desde: ${filtros.fechaInicio || 'Inicio'} - Hasta: ${filtros.fechaFin || 'Fin'}`
+      : 'Histórico Completo';
+
+    const header = [
+      ["Reporte:", "Histórico de Ventas y A&P (Sell-Out)"],
+      ["Distribuidor:", distriNombre],
+      ["Periodo:", periodo],
+      []
+    ];
+
+    // --- ¡AÑADIDA COLUMNA PRECIO! ---
+    const tableHeader = [
+      "Mes/Año", "Marca", "Precio Unitario (€)", "Ventas (uds)", "Ventas (€)", "Muestras (uds)",
+      "Regaladas (uds)", "Acuerdo (uds)", "Valor Acuerdo (€)", "Aportación (€)", "TOTAL A&P (€)"
+    ];
+
+    const tableBody = movimientosFiltrados.map(mov => ([
+      mov.mes_ano,
+      mapaMarcas.get(mov.id_marca) || 'N/A',
+      mov.coste_unidad, // <-- El precio guardado
+      mov.ventas_uds,
+      mov.ventas_euros,
+      mov.muestras_uds,
+      mov.regaladas_uds,
+      mov.unidades_acuerdo_calc,
+      mov.valor_acuerdo_calc,
+      mov.aportacion_euros,
+      mov.total_ap_movimiento
+    ]));
+
+    const finalData = [ ...header, tableHeader, ...tableBody ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(finalData);
+    // Ajustar anchos (añadidas columnas de Acuerdo)
+    worksheet['!cols'] = [ {wch:10}, {wch:30}, {wch:15}, {wch:12}, {wch:12}, {wch:12}, {wch:12}, {wch:12}, {wch:14}, {wch:12}, {wch:15} ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Histórico Sell-Out");
+
+    const nombreArchivo = `Historico_SellOut_${distriNombre.substring(0, 15)}_${filtros.fechaInicio || 'hist'}.xlsx`;
+    XLSX.writeFile(workbook, nombreArchivo);
+  };
+
+  const handleBorrarMovimiento = async (docId, nombreMarca, mes) => {
+    if (!window.confirm(`¿Está seguro de que desea eliminar el registro de ${nombreMarca} para el mes ${mes}? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    try {
+      await deleteDocument('historicoSellOut', docId);
+      onDataDeleted();
+      alert("Registro borrado con éxito.");
+    } catch (error) {
+      console.error("Error al borrar:", error);
+      alert("Error al borrar el registro: " + error.message);
+    }
+  };
+
+  if (cargando) {
+    return <div className="text-slate-500 dark:text-slate-400">Actualizando datos...</div>;
+  }
+
+  // Totales de la tabla (sobre los datos ya filtrados)
+  const totales = movimientosFiltrados.reduce((acc, mov) => {
+    acc.ventas_uds += mov.ventas_uds || 0;
+    acc.ventas_euros += mov.ventas_euros || 0;
+    acc.muestras_uds += mov.muestras_uds || 0;
+    acc.regaladas_uds += mov.regaladas_uds || 0;
+    acc.unidades_acuerdo_calc += mov.unidades_acuerdo_calc || 0;
+    acc.valor_acuerdo_calc += mov.valor_acuerdo_calc || 0;
+    acc.aportacion_euros += mov.aportacion_euros || 0;
+    acc.total_ap_movimiento += mov.total_ap_movimiento || 0;
+    return acc;
+  }, {
+    ventas_uds: 0, ventas_euros: 0, muestras_uds: 0, regaladas_uds: 0,
+    unidades_acuerdo_calc: 0, valor_acuerdo_calc: 0, aportacion_euros: 0, total_ap_movimiento: 0
+  });
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-1">
+        <h3 className="text-lg font-medium text-slate-900 dark:text-white">Histórico de Movimientos (Ventas y A&P)</h3>
+        <button onClick={handleExportarExcel} className={botonExito}>
+          Exportar a Excel (Datos Filtrados)
+        </button>
+      </div>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">Mostrando todos los movimientos guardados para este distribuidor.</p>
+
+      <div className={filtroContenedor}>
+        <label className={etiqueta}>Desde:</label>
+        <SelectorMesAno value={filtros.fechaInicio} onChange={(v) => setFiltros(prev => ({ ...prev, fechaInicio: v }))} />
+        <label className={etiqueta}>Hasta:</label>
+        <SelectorMesAno value={filtros.fechaFin} onChange={(v) => setFiltros(prev => ({ ...prev, fechaFin: v }))} />
+        <label className={etiqueta}>Marca:</label>
+        <select name="id_marca" value={filtros.id_marca} onChange={handleFiltroChange} className={`${inputClasses} min-w-[200px]`}>
+          <option value="">-- Todas las Marcas --</option>
+          {marcas.map(m => (
+            <option key={m.id} value={m.id}>{m.nombre_marca}</option>
+          ))}
+        </select>
+        <button className={`${botonSecundario} ml-auto`} onClick={() => setFiltros({ fechaInicio: '', fechaFin: '', id_marca: '' })}>
+          Limpiar Filtros
+        </button>
+      </div>
+
+      <div className="overflow-x-auto mt-5 rounded-lg border border-slate-200 dark:border-slate-800">
+        <table className="w-full border-collapse text-xs">
+          <thead>
+            <tr>
+              <th className={thClasses}>Mes/Año</th>
+              <th className={thClasses}>Marca</th>
+              <th className={thClasses}>Precio (€)</th>
+              <th className={thClasses}>Ventas (uds)</th>
+              <th className={thClasses}>Ventas (€)</th>
+              <th className={thClasses}>Muestras (uds)</th>
+              <th className={thClasses}>Regaladas (uds)</th>
+              <th className={thClasses}>Acuerdo (uds)</th>
+              <th className={`${thClasses} !text-amber-600 dark:!text-amber-400`}>Valor Acuerdo (€)</th>
+              <th className={thClasses} title="Solo se rellena si se introdujo a mano un gasto extra de A&P que no fuera Muestras, Regaladas ni Acuerdo. En datos importados del Excel siempre es 0€.">Aportación Manual (€) ⓘ</th>
+              <th className={`${thClasses} !bg-indigo-50 dark:!bg-indigo-500/20 !text-indigo-700 dark:!text-indigo-300`}>TOTAL A&P (€)</th>
+              <th className={thClasses}>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            {movimientosFiltrados.length > 0 ? (
+              movimientosFiltrados.map(mov => {
+                const nombreMarca = mapaMarcas.get(mov.id_marca) || 'Marca Desconocida';
+                return (
+                  <tr key={mov.id}>
+                    <td className={tdClasses}>{mov.mes_ano}</td>
+                    <td className={`${tdClasses} font-semibold`}>{nombreMarca}</td>
+                    <td className={tdRightClasses}>{formateadorMoneda.format(mov.coste_unidad)}</td>
+                    <td className={tdRightClasses}>{Math.round(mov.ventas_uds)}</td>
+                    <td className={tdRightClasses}>{formateadorMoneda.format(mov.ventas_euros)}</td>
+                    <td className={tdRightClasses}>{Math.round(mov.muestras_uds)}</td>
+                    <td className={tdRightClasses}>{Math.round(mov.regaladas_uds)}</td>
+                    <td className={tdRightClasses}>{Math.round(mov.unidades_acuerdo_calc || 0)}</td>
+                    <td className={tdRightClasses}>{formateadorMoneda.format(mov.valor_acuerdo_calc || 0)}</td>
+                    <td className={tdRightClasses}>{formateadorMoneda.format(mov.aportacion_euros)}</td>
+                    <td className={`${tdRightClasses} font-semibold bg-indigo-50/60 dark:bg-indigo-500/20`}>
+                      {formateadorMoneda.format(mov.total_ap_movimiento)}
+                    </td>
+                    <td className={`${tdClasses} text-center`}>
+                      <button
+                        className={botonPeligro}
+                        onClick={() => handleBorrarMovimiento(mov.id, nombreMarca, mov.mes_ano)}
+                      >
+                        Borrar
+                      </button>
+                    </td>
+                  </tr>
+                )
+              })
+            ) : (
+              <tr>
+                <td colSpan="12" className={`${tdClasses} text-center py-5`}>
+                  No hay movimientos históricos que coincidan con los filtros.
+                </td>
+              </tr>
+            )}
+            {movimientosFiltrados.length > 0 && (
+              <tr className={trTotales}>
+                <td className={tdClasses}>TOTALES</td>
+                <td className={tdClasses}></td>
+                <td className={tdClasses}></td>
+                <td className={tdRightClasses}>{Math.round(totales.ventas_uds)}</td>
+                <td className={tdRightClasses}>{formateadorMoneda.format(totales.ventas_euros)}</td>
+                <td className={tdRightClasses}>{Math.round(totales.muestras_uds)}</td>
+                <td className={tdRightClasses}>{Math.round(totales.regaladas_uds)}</td>
+                <td className={tdRightClasses}>{Math.round(totales.unidades_acuerdo_calc)}</td>
+                <td className={tdRightClasses}>{formateadorMoneda.format(totales.valor_acuerdo_calc)}</td>
+                <td className={tdRightClasses}>{formateadorMoneda.format(totales.aportacion_euros)}</td>
+                <td className={`${tdRightClasses} bg-indigo-50/60 dark:bg-indigo-500/20`}>
+                  {formateadorMoneda.format(totales.total_ap_movimiento)}
+                </td>
+                <td className={tdClasses}></td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export default Historico;

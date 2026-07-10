@@ -1,0 +1,57 @@
+/*
+ * SplashScreen.css (Versión 2.0 - Tema Azul Oscuro)
+ * Estilos para la pantalla de carga profesional.
+ */
+
+.splash-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh; /* Ocupa toda la pantalla */
+  
+  /* --- ¡NUEVOS ESTILOS! --- */
+  background-color: #0d1b2a; /* Un azul oscuro/casi negro profesional */
+  color: #e0e0e0; /* Texto claro (para "Cargando...") */
+}
+
+.splash-logo {
+  /* --- ¡LOGO MÁS GRANDE! --- */
+  height: 100px; /* (Puede cambiar este 100px a 80px o 120px si lo prefiere) */
+  max-width: 250px;
+  margin-bottom: 30px;
+  
+  /* (Opcional) Añade una animación sutil de "aparición" */
+  animation: fadeIn 1s ease-in-out;
+}
+
+.splash-loader {
+  border: 4px solid #415a77; /* Un gris azulado para el fondo del loader */
+  
+  /* --- ¡NUEVO COLOR! --- */
+  border-top: 4px solid #ffffff; /* El color de la parte que gira (blanco) */
+  
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 20px;
+}
+
+/* Animación de giro (sin cambios) */
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Animación de aparición (opcional) */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

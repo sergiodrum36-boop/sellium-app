@@ -1,0 +1,96 @@
+/*
+ * App.css (Versión 4.1 - Tema Profesional Claro)
+ */
+
+.App {
+  text-align: left;
+}
+
+/* --- ENCABEZADO CLARO (El que ya teníamos) --- */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #ffffff; /* Fondo blanco */
+  padding: 10px 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.header-logo img {
+  height: 40px;
+  max-width: 150px;
+  vertical-align: middle;
+}
+
+.header-info {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+/* --- ¡NUEVOS ESTILOS DE NAVEGACIÓN! --- */
+
+/* Contenedor de la navegación */
+.header-nav {
+  display: flex;
+  gap: 5px;
+}
+
+/* Estilo base de los botones de navegación */
+.nav-button {
+  padding: 10px 15px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  border: none;
+  border-bottom: 3px solid transparent; /* Borde inferior transparente */
+  background-color: transparent; /* Fondo transparente */
+}
+
+/* Estilo del botón INACTIVO */
+.nav-button {
+  color: #555; /* Texto gris oscuro */
+}
+.nav-button:hover {
+  background-color: #f4f7f6; /* Un fondo gris claro al pasar el ratón */
+  color: #007bff; /* Texto azul al pasar el ratón */
+}
+
+/* Estilo del botón ACTIVO */
+.nav-button.active {
+  color: #007bff; /* Texto azul */
+  border-bottom: 3px solid #007bff; /* Línea azul debajo */
+}
+
+
+/* Estilo del botón de Cerrar Sesión (gris) */
+.logout-button {
+  background-color: #6c757d;
+  border-color: #6c757d;
+  color: white;
+  font-weight: bold;
+}
+.logout-button:hover {
+  background-color: #5a6268;
+  border-color: #5a6268;
+}
+/* --- (AÑADA ESTO AL FINAL DE App.css) --- */
+
+/* --- Estilo del nuevo Botón de Ayuda [?] --- */
+.help-button {
+  background-color: #17a2b8; /* Azul/Cian */
+  border-color: #17a2b8;
+  color: white;
+  font-weight: bold;
+  font-size: 16px;
+  border-radius: 50%; /* Círculo */
+  width: 38px; /* Ancho fijo */
+  height: 38px; /* Alto fijo */
+  padding: 0;
+}
+
+.help-button:hover {
+  background-color: #138496;
+  border-color: #138496;
+}
