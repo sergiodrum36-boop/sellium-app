@@ -29,7 +29,14 @@ jobs:
         run: npm install
 
       - name: Generar la version de produccion (build)
+        # CI=false: por defecto, GitHub Actions define CI=true, y
+        # Create React App con CI=true convierte los "warnings" de ESLint
+        # (como variables sin usar) en errores que rompen el build. En tu
+        # PC, sin esa variable, esos mismos avisos son solo warnings y el
+        # build termina bien. Con CI=false se comporta igual que en tu PC.
         run: npm run build
+        env:
+          CI: false
 
       - name: Publicar en Firebase Hosting
         run: npx firebase-tools deploy --only hosting --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive
