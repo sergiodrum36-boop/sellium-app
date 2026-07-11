@@ -152,11 +152,12 @@ import {
   Wrench, ClipboardList, Tags, Trash2, ScrollText, Target, Menu, X, TrendingDown
 } from 'lucide-react';
 import logo from './assets/logo.png';
-// Logo de la app (Sellium), a petición de Sergio: se añade junto al logo de
-// la empresa (UNESDI) SIN quitar este último. Solo en la cabecera expandida
-// (desktop y móvil) — en el modo colapsado del sidebar (w-16, muy estrecho)
-// se sigue mostrando solo el de la empresa para no amontonar dos logos en
-// tan poco espacio.
+// Logo de la app (Sellium), a petición de Sergio: se probó primero junto al
+// logo de la empresa (UNESDI) en la cabecera, pero ahí quedaba demasiado
+// pequeño/apretado (competía por espacio con el botón de contraer/expandir,
+// que llegó a quedar fuera del ancho visible). Se usa en el PIE del sidebar
+// en su lugar, como un "Powered by" — ver más abajo, cerca de "Cerrar
+// sesión". Solo en modo expandido, igual que el resto de textos del pie.
 import logoSellium from './assets/logo-sellium.png';
 import Sidebar from './Sidebar';
 import {
@@ -335,13 +336,7 @@ function Layout({
         }
       >
         <div className={`flex items-center gap-2 px-5 py-4 border-b border-slate-200 dark:border-white/10 ${colapsadoVisual ? 'md:flex-col md:px-2' : 'justify-between'}`}>
-          {!colapsadoVisual && (
-            <div className="flex items-center gap-3 min-w-0">
-              <img src={logo} alt="Logo de la empresa" className="h-8 w-auto md:h-8 shrink-0" />
-              <div className="w-px h-6 bg-slate-200 dark:bg-white/10 shrink-0" />
-              <img src={logoSellium} alt="Sellium" className="h-6 w-auto md:h-6 shrink-0" />
-            </div>
-          )}
+          {!colapsadoVisual && <img src={logo} alt="Logo de la empresa" className="h-8 w-auto md:h-8" />}
           {colapsadoVisual && <img src={logo} alt="Logo de la empresa" className="h-8 w-auto md:h-7" />}
 
           {/* Contraer/Expandir menú: solo tiene sentido en desktop, donde el
@@ -457,6 +452,20 @@ function Layout({
             <LogOut size={18} />
             {!colapsadoVisual && 'Cerrar sesión'}
           </button>
+
+          {/* Logo de la app (Sellium), a petición de Sergio: se probó junto
+              al logo de la empresa en la cabecera, pero ahí quedaba
+              demasiado pequeño/apretado (tenía que competir por espacio con
+              el botón de contraer). Se mueve aquí, al pie, como un discreto
+              "Powered by" a un tamaño legible — y solo en modo expandido,
+              igual que el resto de textos de este pie (email, "Viendo
+              como"...). */}
+          {!colapsadoVisual && (
+            <div className="pt-3 mt-2 border-t border-slate-200 dark:border-white/10 flex flex-col items-center gap-1.5">
+              <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">Powered by</span>
+              <img src={logoSellium} alt="Sellium" className="h-7 w-auto" />
+            </div>
+          )}
         </div>
       </aside>
 
@@ -474,8 +483,6 @@ function Layout({
             <Menu size={22} />
           </button>
           <img src={logo} alt="Logo de la empresa" className="h-7 w-auto shrink-0" />
-          <div className="w-px h-5 bg-slate-200 dark:bg-white/10 shrink-0" />
-          <img src={logoSellium} alt="Sellium" className="h-5 w-auto shrink-0" />
         </div>
 
         <main className="flex-1 p-3 sm:p-5">
