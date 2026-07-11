@@ -3,13 +3,24 @@
  * Cambios sobre la 5.3: solo la maquetación pasa a Tailwind CSS (con
  * soporte de modo oscuro), igual que su pantalla gemela Historico.js.
  * La lógica de filtrado/borrado no cambia.
+ *
+ * CAMBIO (paginación, a petición de Sergio - repaso/auditoría de la app):
+ * mismo cambio que en Historico.js — ver usePaginacion.js. Los totales y la
+ * exportación a Excel siguen usando `movimientosFiltrados` completo.
+ *
+ * CAMBIO (papelera, a petición de Sergio): mismo cambio que en su pantalla
+ * gemela Historico.js — "Borrar" mueve el registro a la papelera en vez de
+ * eliminarlo de verdad, ver firebaseApi.js/moverAPapelera.
  */
 
 import React, { useState, useEffect } from 'react';
-import { deleteDocument } from './firebaseApi';
+import { moverAPapelera } from './firebaseApi';
+import { auth } from './firebaseConfig';
 import * as XLSX from 'xlsx';
 import { inputClasses, botonSecundario, botonExito, botonPeligro, etiqueta, filtroContenedor, thClasses, tdClasses, tdRightClasses, trTotales } from './uiClasses';
 import SelectorMesAno from './SelectorMesAno';
+import usePaginacion, { TAMAÑO_PAGINA_DEFECTO } from './usePaginacion';
+import Paginacion from './Paginacion';
 
 const formateadorMoneda = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 
@@ -109,19 +120,28 @@ function HistoricoSellIn({ idDistribuidor, marcas, listaDistribuidores, historic
   };
 
   // ¡Función de Borrar SÍ existe!
-  const handleBorrarMovimiento = async (docId, nombreMarca, mes) => {
-    if (!window.confirm(`¿Está seguro de que desea eliminar la COMPRA de ${nombreMarca} para el mes ${mes}? Esta acción no se puede deshacer.`)) {
+  const handleBorrarMovimiento = async (mov, nombreMarca) => {
+    if (!window.confirm(`¿Mover a la papelera la COMPRA de ${nombreMarca} para el mes ${mov.mes_ano}? Podrás recuperarla desde "Papelera" (Herramientas) si fue un error.`)) {
       return;
     }
     try {
-      await deleteDocument('historicoSellIn', docId);
+      await moverAPapelera('historicoSellIn', mov.id, {
+        idUsuario: mov.id_usuario,
+        actorUid: auth.currentUser?.uid,
+        actorEmail: auth.currentUser?.email,
+        resumen: `Sell-In: ${nombreMarca} · ${mov.mes_ano}`
+      });
       onDataDeleted(); // Avisar al padre para que refresque
-      alert("Registro borrado con éxito.");
+      alert("Registro movido a la papelera.");
     } catch (error) {
       console.error("Error al borrar:", error);
       alert("Error al borrar el registro: " + error.message);
     }
   };
+
+  // Paginación (ver usePaginacion.js): sobre movimientosFiltrados completo;
+  // los totales de abajo y la exportación a Excel de arriba no cambian.
+  const { pagina, totalPaginas, itemsPagina, irPaginaAnterior, irPaginaSiguiente } = usePaginacion(movimientosFiltrados);
 
   if (cargando) {
     return <div className="text-slate-500 dark:text-slate-400">Actualizando datos...</div>;
@@ -176,7 +196,7 @@ function HistoricoSellIn({ idDistribuidor, marcas, listaDistribuidores, historic
           </thead>
           <tbody>
             {movimientosFiltrados.length > 0 ? (
-              movimientosFiltrados.map(mov => {
+              itemsPagina.map(mov => {
                 const nombreMarca = mapaMarcas.get(mov.id_marca) || 'N/A';
                 return (
                   <tr key={mov.id}>
@@ -190,7 +210,7 @@ function HistoricoSellIn({ idDistribuidor, marcas, listaDistribuidores, historic
                     <td className={`${tdClasses} text-center`}>
                       <button
                         className={botonPeligro}
-                        onClick={() => handleBorrarMovimiento(mov.id, nombreMarca, mov.mes_ano)}
+                        onClick={() => handleBorrarMovimiento(mov, nombreMarca)}
                       >
                         Borrar
                       </button>
@@ -220,6 +240,15 @@ function HistoricoSellIn({ idDistribuidor, marcas, listaDistribuidores, historic
           </tbody>
         </table>
       </div>
+
+      <Paginacion
+        pagina={pagina}
+        totalPaginas={totalPaginas}
+        totalRegistros={movimientosFiltrados.length}
+        tamañoPagina={TAMAÑO_PAGINA_DEFECTO}
+        onAnterior={irPaginaAnterior}
+        onSiguiente={irPaginaSiguiente}
+      />
     </div>
   );
 }

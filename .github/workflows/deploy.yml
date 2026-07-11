@@ -1,0 +1,31 @@
+name: Compilar y publicar Sellium en Firebase Hosting
+
+# Se ejecuta solo cuando llega un cambio a la rama "main" (es decir, cada vez
+# que se hace "git push" desde "Subir cambios a GitHub.bat" o desde la subida
+# inicial). No hace falta tocar nada manualmente: GitHub compila la app y la
+# publica en Firebase Hosting automaticamente.
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el codigo del repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Generar la version de produccion (build)
+        run: npm run build
+
+      - name: Publicar en Firebase Hosting
+        run: npx firebase-tools deploy --only hosting --token "${{ secrets.FIREBASE_TOKEN }}" --non-interactive

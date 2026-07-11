@@ -9,6 +9,19 @@
  * marca...) al volver a ellas. Ver usePestañasVisitadas.js para el porqué y
  * el patrón general; aquí se aplica igual, con `pestañaActiva` (la prop que
  * ya recibía este componente) como id activo.
+ *
+ * CAMBIO (roles/permisos Fase 2, a petición de Sergio): nueva prop
+ * `bloqueadoPorTodos` — cuando un manager elige "Todos los usuarios" en el
+ * selector de App.js, esta pantalla (de EDICIÓN, no de análisis) se
+ * bloquea con un aviso en vez de intentar operar sobre varios usuarios a
+ * la vez. Ver el `if (bloqueadoPorTodos)` cerca del renderizado.
+ *
+ * CAMBIO (papelera + auditoría, a petición de Sergio): dos nuevas pestañas
+ * en "Herramientas" (junto a Mantenimiento) — "Papelera" (Papelera.js) para
+ * restaurar o eliminar definitivamente registros borrados, y "Auditoría"
+ * (Auditoria.js) para consultar quién hizo cada borrado/restauración/
+ * reseteo y cuándo. Ambas son "de toda la cuenta", igual que Mantenimiento:
+ * no dependen del distribuidor seleccionado arriba.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -43,6 +56,8 @@ import Mantenimiento from './Mantenimiento';
 import ImportarExcel from './ImportarExcel';
 import FusionarMarcas from './FusionarMarcas';
 import CorregirAnio from './CorregirAnio';
+import Papelera from './Papelera';
+import Auditoria from './Auditoria';
 
 // Constantes para las pestañas.
 // EXPORTADAS (rediseño visual, Fase 3): antes eran locales a este archivo
@@ -63,6 +78,8 @@ export const PESTAÑA_IMPORTAR = 'IMPORTAR';
 export const PESTAÑA_FUSIONAR_MARCAS = 'FUSIONAR_MARCAS';
 export const PESTAÑA_CORREGIR_ANIO = 'CORREGIR_ANIO';
 export const PESTAÑA_MANTENIMIENTO = 'MANTENIMIENTO';
+export const PESTAÑA_PAPELERA = 'PAPELERA';
+export const PESTAÑA_AUDITORIA = 'AUDITORIA';
 
 // Lista de todos los ids de "Gestión por Distribuidor", en el orden en que
 // se muestran en el Sidebar. La usan App.js (para saber si el id activo hay
@@ -81,9 +98,11 @@ export const PESTAÑAS_GESTION = [
   PESTAÑA_FUSIONAR_MARCAS,
   PESTAÑA_CORREGIR_ANIO,
   PESTAÑA_MANTENIMIENTO,
+  PESTAÑA_PAPELERA,
+  PESTAÑA_AUDITORIA,
 ];
 
-function PantallaDistribuidor({ idUsuario, pestañaActiva }) {
+function PantallaDistribuidor({ idUsuario, pestañaActiva, bloqueadoPorTodos = false }) {
 
   // --- ESTADOS ---
   const [listaDistribuidores, setListaDistribuidores] = useState([]);
@@ -260,6 +279,26 @@ function PantallaDistribuidor({ idUsuario, pestañaActiva }) {
   const estiloPestaña = (id) => ({ display: pestañaActiva === id ? 'block' : 'none' });
 
   // --- RENDERIZADO ---
+
+  // Roles/permisos, Fase 2 (ver cabecera de App.js): en modo "Todos los
+  // usuarios" esta pantalla se bloquea con un aviso — es de EDICIÓN (crear/
+  // borrar/importar), no de análisis, y no hay un "distribuidor" único al
+  // que aplicar esas acciones cuando se mezclan varios usuarios. App.js ya
+  // pasa idUsuario=null en este modo, así que ningún efecto de carga de
+  // datos llega a dispararse (todos empiezan con `if (!idUsuario) return`);
+  // este aviso va ANTES del chequeo de cargandoMaestros para no dejar
+  // colgado el "Cargando datos maestros..." (que nunca terminaría, porque
+  // sin idUsuario cargarMaestros tampoco se llama).
+  if (bloqueadoPorTodos) {
+    return (
+      <div className={tarjeta}>
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          "Gestión por Distribuidor" no está disponible en modo "Todos los usuarios" — es una pantalla para dar de alta, importar y editar los datos de UN distribuidor concreto. Elige "Mis datos" o un usuario del selector "Viendo como" (barra lateral) para gestionar aquí.
+        </p>
+      </div>
+    );
+  }
+
   if (cargandoMaestros) {
     return <div>Cargando datos maestros...</div>;
   }
@@ -331,7 +370,7 @@ function PantallaDistribuidor({ idUsuario, pestañaActiva }) {
           este componente solo renderiza la subvista según "pestañaActiva". */}
 
       {/* 2. CONTENIDO DE PESTAÑA ACTIVA */}
-      {idDistribuidorSel || pestañaActiva === PESTAÑA_MANTENIMIENTO || pestañaActiva === PESTAÑA_IMPORTAR || pestañaActiva === PESTAÑA_FUSIONAR_MARCAS || pestañaActiva === PESTAÑA_CORREGIR_ANIO ? (
+      {idDistribuidorSel || pestañaActiva === PESTAÑA_MANTENIMIENTO || pestañaActiva === PESTAÑA_IMPORTAR || pestañaActiva === PESTAÑA_FUSIONAR_MARCAS || pestañaActiva === PESTAÑA_CORREGIR_ANIO || pestañaActiva === PESTAÑA_PAPELERA || pestañaActiva === PESTAÑA_AUDITORIA ? (
         <div className={tarjeta}>
 
           {visitadas.has(PESTAÑA_VENTAS_AP) && (
@@ -451,6 +490,18 @@ function PantallaDistribuidor({ idUsuario, pestañaActiva }) {
           {visitadas.has(PESTAÑA_MANTENIMIENTO) && (
             <div style={estiloPestaña(PESTAÑA_MANTENIMIENTO)}>
               <Mantenimiento idUsuario={idUsuario} onResetApp={handleResetApp} />
+            </div>
+          )}
+
+          {visitadas.has(PESTAÑA_PAPELERA) && (
+            <div style={estiloPestaña(PESTAÑA_PAPELERA)}>
+              <Papelera idUsuario={idUsuario} marcas={marcasGlobales} listaDistribuidores={listaDistribuidores} />
+            </div>
+          )}
+
+          {visitadas.has(PESTAÑA_AUDITORIA) && (
+            <div style={estiloPestaña(PESTAÑA_AUDITORIA)}>
+              <Auditoria idUsuario={idUsuario} />
             </div>
           )}
         </div>

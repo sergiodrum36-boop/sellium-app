@@ -80,6 +80,68 @@
  * (ControlAP.js, PantallaDashboard.js) NO se borran ni se tocan — solo
  * dejan de tener entrada en el Sidebar; siguen intactos por si hicieran
  * falta más adelante.
+ *
+ * Cambios (roles/permisos, a petición de Sergio): si el usuario logueado es
+ * "manager" (ver App.js/firebaseApi.js), aparece encima del email, en el
+ * pie de la barra lateral, un selector "Viendo como" con "Mis datos" + un
+ * item por cada usuario dado de alta. Cambiar la selección no navega a
+ * ningún sitio nuevo — solo cambia de QUIÉN son los datos que se están
+ * viendo en la pantalla ya abierta (App.js pasa `idUsuarioEfectivo`, no el
+ * id propio, a las 5 secciones). No aparece nada de esto para un usuario
+ * normal (esManager=false): sigue viendo solo lo suyo, exactamente como
+ * antes de este cambio.
+ *
+ * Cambios (roles/permisos Fase 2 — "Todos los usuarios", a petición de
+ * Sergio): el selector "Viendo como" gana una tercera opción, "Todos los
+ * usuarios" (valor TODOS_LOS_USUARIOS, ver firebaseApi.js), entre "Mis
+ * datos" y la lista de usuarios concretos. Al elegirla, las 4 pantallas de
+ * análisis (Dashboard, Dashboard A&P Compañía, Reportes, Dashboard de
+ * Ventas Reales) agregan el histórico de TODOS los usuarios a la vez; la
+ * pantalla de "Gestión por Distribuidor" (que es de edición, no de
+ * análisis) se bloquea con un aviso en ese modo — ver App.js y
+ * PantallaDistribuidor.js.
+ *
+ * Cambios (alertas proactivas, a petición de Sergio, último punto de la
+ * auditoría de la app): se añade una campana con contador (AlertasBell.js)
+ * en el pie de la barra lateral, con el detalle de los avisos calculados en
+ * App.js (ver alertas.js) — balance negativo, distribuidores sin actividad
+ * reciente y descuadre de datos. Visible para cualquier usuario (no solo
+ * managers), justo encima del selector "Viendo como".
+ *
+ * Cambios (papelera + auditoría, a petición de Sergio): dos nuevas entradas
+ * en la subcategoría "Herramientas" de "Gestión por Distribuidor" —
+ * "Papelera" y "Auditoría" (ver PantallaDistribuidor.js/Papelera.js/
+ * Auditoria.js), junto a "Mantenimiento".
+ *
+ * Cambios (Presupuesto y Forecast, Fase 2 profesionalización, a petición
+ * de Sergio: "dar un hueco aparte ya que solo se utilizaría una o dos veces
+ * al año la creación del budget"): nuevo acceso de NIVEL SUPERIOR (junto a
+ * "Reportes Generales", fuera de los grupos "Gestión por Distribuidor" y
+ * "Dashboard") — ver PantallaPresupuesto.js.
+ *
+ * Cambios (responsive/móvil, a petición de Sergio, último punto pendiente
+ * del roadmap de profesionalización): hasta ahora el <aside> era SIEMPRE
+ * visible con ancho fijo (w-64/w-16 según "colapsado"), lo que en una
+ * pantalla de móvil (viewport <768px, breakpoint "md" de Tailwind) dejaba
+ * casi sin espacio al contenido principal — no había ninguna forma de
+ * ocultarlo. Se añade:
+ *  - Un estado nuevo `menuMovilAbierto` (solo relevante <768px).
+ *  - En móvil el <aside> pasa a ser "off-canvas": position fixed, fuera de
+ *    la pantalla (-translate-x-full) por defecto, y se desliza a la vista
+ *    (translate-x-0) cuando se abre. A partir de "md:" recupera el
+ *    comportamiento de siempre (estático, dentro del flujo, sin transform).
+ *  - Un overlay semitransparente detrás del menú abierto en móvil, que lo
+ *    cierra al tocarlo fuera.
+ *  - Una barra superior nueva, visible SOLO en móvil ("md:hidden"), con el
+ *    botón de hamburguesa (abre el menú) y el logo — en desktop esa barra
+ *    no se muestra porque el <aside> ya está siempre visible.
+ *  - El botón de contraer/expandir (ChevronsLeft/Right) queda oculto en
+ *    móvil (no tiene sentido "contraer" un menú que ya está oculto por
+ *    defecto) y se sustituye ahí por un botón de cerrar (X).
+ *  - Elegir cualquier opción del menú (Sidebar) cierra automáticamente el
+ *    menú móvil, para no tener que cerrarlo a mano tras cada navegación.
+ * En pantallas "md:" o mayores, el comportamiento visual es IDÉNTICO al de
+ * antes de este cambio.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -87,7 +149,7 @@ import {
   LayoutDashboard, Users, BarChart3, HelpCircle, LogOut, Sun, Moon,
   ChevronsLeft, ChevronsRight, FileSpreadsheet, FileText, ShoppingCart,
   Package, ShieldCheck, History, Upload, GitMerge, CalendarClock,
-  Wrench, ClipboardList, Tags
+  Wrench, ClipboardList, Tags, Trash2, ScrollText, Target, Menu, X
 } from 'lucide-react';
 import logo from './assets/logo.png';
 import Sidebar from './Sidebar';
@@ -95,13 +157,17 @@ import {
   PESTAÑA_VENTAS_AP, PESTAÑA_COMPRAS, PESTAÑA_STOCK,
   PESTAÑA_CONTROL_AP_VISION_COMERCIAL, PESTAÑA_HISTORICO_SELLOUT,
   PESTAÑA_HISTORICO_SELLIN, PESTAÑA_IMPORTAR, PESTAÑA_FUSIONAR_MARCAS,
-  PESTAÑA_CORREGIR_ANIO, PESTAÑA_MANTENIMIENTO
+  PESTAÑA_CORREGIR_ANIO, PESTAÑA_MANTENIMIENTO, PESTAÑA_PAPELERA,
+  PESTAÑA_AUDITORIA
 } from './PantallaDistribuidor';
 import {
   PESTAÑA_VENTAS_REALES_DASHBOARD, PESTAÑA_VENTAS_REALES_IMPORTAR,
   PESTAÑA_VENTAS_REALES_TIPOLOGIA
 } from './PantallaVentasReales';
 import { PANTALLA_DASHBOARD_AP_COMPANIA } from './PantallaDashboardAPCompania';
+import { PANTALLA_PRESUPUESTO } from './PantallaPresupuesto';
+import { TODOS_LOS_USUARIOS } from './firebaseApi';
+import AlertasBell from './AlertasBell';
 
 export const PANTALLA_REPORTES = 'REPORTES';
 export const PANTALLA_DASHBOARD = 'DASHBOARD';
@@ -145,6 +211,8 @@ const GESTION_ITEMS = [
       { id: PESTAÑA_FUSIONAR_MARCAS, label: 'Fusionar Marcas', icon: GitMerge },
       { id: PESTAÑA_CORREGIR_ANIO, label: 'Corregir Año', icon: CalendarClock },
       { id: PESTAÑA_MANTENIMIENTO, label: 'Mantenimiento', icon: Wrench },
+      { id: PESTAÑA_PAPELERA, label: 'Papelera', icon: Trash2 },
+      { id: PESTAÑA_AUDITORIA, label: 'Auditoría', icon: ScrollText },
     ],
   },
   // Suelto (no encaja con claridad en ninguna subcategoría de arriba) —
@@ -169,6 +237,10 @@ const TOP_ITEMS = [
   { id: PESTAÑA_VENTAS_REALES_IMPORTAR, label: 'Importar Sell-In (QlikSense)', icon: Upload },
   { id: PESTAÑA_VENTAS_REALES_TIPOLOGIA, label: 'Tipología (bebidas)', icon: Tags },
   { id: PANTALLA_REPORTES, label: 'Reportes Generales', icon: BarChart3 },
+  // Presupuesto y Forecast (Fase 2 profesionalización): hueco aparte a
+  // nivel superior, a petición explícita de Sergio — ver cabecera del
+  // archivo y PantallaPresupuesto.js.
+  { id: PANTALLA_PRESUPUESTO, label: 'Presupuesto y Forecast', icon: Target },
 ];
 
 function navButtonClasses(activo, colapsado) {
@@ -178,7 +250,11 @@ function navButtonClasses(activo, colapsado) {
   return base + ' ' + (activo ? activoClasses : inactivoClasses);
 }
 
-function Layout({ pantallaActiva, onNavigate, userEmail, onHelp, onLogout, children }) {
+function Layout({
+  pantallaActiva, onNavigate, userEmail, onHelp, onLogout, children,
+  esManager, listaUsuarios, idUsuarioPropio, idUsuarioViendo, onCambiarUsuarioViendo,
+  alertas, cargandoAlertas, onRefrescarAlertas
+}) {
   const [modoOscuro, setModoOscuro] = useState(() => {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('tema') === 'oscuro';
@@ -191,6 +267,31 @@ function Layout({ pantallaActiva, onNavigate, userEmail, onHelp, onLogout, child
     return window.localStorage.getItem('sidebarColapsado') === '1';
   });
 
+  // Responsive/móvil (ver cabecera del archivo): menú off-canvas, cerrado
+  // por defecto. Solo tiene efecto visual por debajo del breakpoint "md" de
+  // Tailwind (768px) — en desktop el <aside> ignora este estado.
+  const [menuMovilAbierto, setMenuMovilAbierto] = useState(false);
+
+  // Navegar desde el Sidebar cierra el menú móvil automáticamente (en
+  // desktop no tiene efecto visible, ya que el <aside> nunca está "cerrado"
+  // ahí).
+  const handleNavigate = (id) => {
+    onNavigate(id);
+    setMenuMovilAbierto(false);
+  };
+
+  // "colapsado" (iconos sin texto, sin selector/email/etiquetas de botón) es
+  // una preferencia de DESKTOP. En móvil el <aside> siempre se abre a w-64
+  // completo (ver clases del <aside> más abajo) — si se usara el valor
+  // "colapsado" tal cual también en el pie/Sidebar, un usuario que hubiera
+  // dejado el menú contraído en su última sesión de escritorio vería en el
+  // móvil un cajón ancho pero sin ninguna etiqueta ni el email ni el
+  // selector "Viendo como", sin ninguna forma de expandirlo (el botón de
+  // contraer/expandir está oculto en móvil a propósito). `colapsadoVisual`
+  // es lo que de verdad se usa para decidir qué se pinta: la preferencia
+  // real SOLO cuando no estamos en el menú móvil abierto.
+  const colapsadoVisual = colapsado && !menuMovilAbierto;
+
   useEffect(() => {
     document.documentElement.classList.toggle('dark', modoOscuro);
     window.localStorage.setItem('tema', modoOscuro ? 'oscuro' : 'claro');
@@ -202,35 +303,105 @@ function Layout({ pantallaActiva, onNavigate, userEmail, onHelp, onLogout, child
 
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-slate-950">
-      <aside className={`${colapsado ? 'w-16' : 'w-64'} shrink-0 flex flex-col bg-white dark:bg-[#0E1015] border-r border-slate-200 dark:border-white/10 transition-all duration-200`}>
-        <div className={`flex items-center gap-2 px-5 py-4 border-b border-slate-200 dark:border-white/10 ${colapsado ? 'flex-col px-2' : 'justify-between'}`}>
-          {!colapsado && <img src={logo} alt="Logo de la empresa" className="h-8 w-auto" />}
-          {colapsado && <img src={logo} alt="Logo de la empresa" className="h-7 w-auto" />}
+      {/* Responsive/móvil: overlay que oscurece el contenido detrás del menú
+          abierto y lo cierra al tocarlo. Solo existe <768px (md:hidden) y
+          solo se renderiza con el menú abierto. */}
+      {menuMovilAbierto && (
+        <div
+          className="fixed inset-0 z-30 bg-black/40 md:hidden"
+          onClick={() => setMenuMovilAbierto(false)}
+          aria-hidden="true"
+        />
+      )}
 
-          {/* Contraer/Expandir menú: deliberadamente en la cabecera, lejos de
-              "Cerrar sesión" (pie) — ver nota de FIX arriba. */}
+      <aside
+        className={
+          `fixed inset-y-0 left-0 z-40 w-64 transform transition-transform duration-200 ` +
+          (menuMovilAbierto ? 'translate-x-0' : '-translate-x-full') +
+          ` md:static md:z-auto md:translate-x-0 md:transition-none ${colapsado ? 'md:w-16' : 'md:w-64'} ` +
+          `shrink-0 flex flex-col bg-white dark:bg-[#0E1015] border-r border-slate-200 dark:border-white/10 md:transition-all md:duration-200`
+        }
+      >
+        <div className={`flex items-center gap-2 px-5 py-4 border-b border-slate-200 dark:border-white/10 ${colapsadoVisual ? 'md:flex-col md:px-2' : 'justify-between'}`}>
+          {!colapsadoVisual && <img src={logo} alt="Logo de la empresa" className="h-8 w-auto md:h-8" />}
+          {colapsadoVisual && <img src={logo} alt="Logo de la empresa" className="h-8 w-auto md:h-7" />}
+
+          {/* Contraer/Expandir menú: solo tiene sentido en desktop, donde el
+              <aside> siempre está visible — ver nota de FIX arriba. Oculto
+              en móvil (md:inline-flex), donde en su lugar hay un botón de
+              cerrar (X) justo debajo. */}
           <button
             type="button"
             onClick={() => setColapsado((v) => !v)}
-            className={`!border-0 !bg-transparent !text-slate-500 hover:!bg-slate-100 hover:!text-slate-900 dark:!text-slate-400 dark:hover:!bg-slate-800 dark:hover:!text-white rounded-md p-1.5 shrink-0 ${colapsado ? 'mt-2' : ''}`}
+            className={`hidden md:inline-flex !border-0 !bg-transparent !text-slate-500 hover:!bg-slate-100 hover:!text-slate-900 dark:!text-slate-400 dark:hover:!bg-slate-800 dark:hover:!text-white rounded-md p-1.5 shrink-0 ${colapsado ? 'md:mt-2' : ''}`}
             title={colapsado ? 'Expandir menú' : 'Contraer menú'}
           >
             {colapsado ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
           </button>
+
+          {/* Cerrar menú: solo en móvil (md:hidden) — ver cabecera del archivo. */}
+          <button
+            type="button"
+            onClick={() => setMenuMovilAbierto(false)}
+            className="md:hidden !border-0 !bg-transparent !text-slate-500 hover:!bg-slate-100 hover:!text-slate-900 dark:!text-slate-400 dark:hover:!bg-slate-800 dark:hover:!text-white rounded-md p-1.5 shrink-0"
+            title="Cerrar menú"
+          >
+            <X size={18} />
+          </button>
         </div>
 
         <nav className="flex-1 px-3 py-4 overflow-y-auto">
+          {/* "colapsado" (iconos sin texto) es una preferencia de DESKTOP —
+              en móvil el <aside> siempre ocupa w-64 (ver clases de arriba),
+              así que aquí se ignora mientras el menú móvil esté abierto
+              (menuMovilAbierto solo puede ser true por el botón de
+              hamburguesa, que a su vez solo existe en móvil: en desktop
+              esta condición nunca cambia el valor de "colapsado"). */}
           <Sidebar
             groups={GROUPS}
             topItems={TOP_ITEMS}
             activeId={pantallaActiva}
-            onSelect={onNavigate}
-            colapsado={colapsado}
+            onSelect={handleNavigate}
+            colapsado={colapsadoVisual}
           />
         </nav>
 
         <div className="px-3 py-4 border-t border-slate-200 dark:border-white/10 space-y-1">
-          {!colapsado && (
+          {/* Alertas proactivas: visible para cualquier usuario (no solo
+              managers), ver cabecera del archivo y alertas.js. */}
+          <AlertasBell
+            alertas={alertas}
+            cargando={cargandoAlertas}
+            onRefrescar={onRefrescarAlertas}
+            colapsado={colapsadoVisual}
+          />
+
+          {/* Roles/permisos: selector "Viendo como", solo para managers (ver
+              cabecera del archivo). Con la barra colapsada no cabe un select
+              con texto, así que se oculta igual que el email de debajo. */}
+          {!colapsadoVisual && esManager && (
+            <div className="px-3 pb-2">
+              <label className="block text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-1">
+                Viendo como
+              </label>
+              <select
+                value={idUsuarioViendo || ''}
+                onChange={(e) => onCambiarUsuarioViendo(e.target.value || null)}
+                className="w-full text-xs px-2 py-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+              >
+                <option value="">Mis datos</option>
+                <option value={TODOS_LOS_USUARIOS}>Todos los usuarios</option>
+                {[...listaUsuarios]
+                  .filter(u => u.id !== idUsuarioPropio)
+                  .sort((a, b) => (a.email || '').localeCompare(b.email || ''))
+                  .map(u => (
+                    <option key={u.id} value={u.id}>{u.email}</option>
+                  ))}
+              </select>
+            </div>
+          )}
+
+          {!colapsadoVisual && (
             <div className="px-3 pb-2 text-xs text-slate-500 dark:text-slate-400 truncate" title={userEmail}>
               {userEmail}
             </div>
@@ -239,16 +410,16 @@ function Layout({ pantallaActiva, onNavigate, userEmail, onHelp, onLogout, child
           <button
             type="button"
             onClick={() => setModoOscuro((v) => !v)}
-            className={navButtonClasses(false, colapsado)}
-            title={colapsado ? (modoOscuro ? 'Modo claro' : 'Modo oscuro') : undefined}
+            className={navButtonClasses(false, colapsadoVisual)}
+            title={colapsadoVisual ? (modoOscuro ? 'Modo claro' : 'Modo oscuro') : undefined}
           >
             {modoOscuro ? <Sun size={18} /> : <Moon size={18} />}
-            {!colapsado && (modoOscuro ? 'Modo claro' : 'Modo oscuro')}
+            {!colapsadoVisual && (modoOscuro ? 'Modo claro' : 'Modo oscuro')}
           </button>
 
-          <button type="button" onClick={onHelp} className={navButtonClasses(false, colapsado)} title={colapsado ? 'Ayuda' : undefined}>
+          <button type="button" onClick={onHelp} className={navButtonClasses(false, colapsadoVisual)} title={colapsadoVisual ? 'Ayuda' : undefined}>
             <HelpCircle size={18} />
-            {!colapsado && 'Ayuda'}
+            {!colapsadoVisual && 'Ayuda'}
           </button>
 
           <button
@@ -261,19 +432,49 @@ function Layout({ pantallaActiva, onNavigate, userEmail, onHelp, onLogout, child
             }}
             className={
               'w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm !font-medium !border-0 !bg-transparent !text-red-600 hover:!bg-red-50 dark:!text-red-400 dark:hover:!bg-red-500/10' +
-              (colapsado ? ' justify-center px-0' : '')
+              (colapsadoVisual ? ' justify-center px-0' : '')
             }
-            title={colapsado ? 'Cerrar sesión' : undefined}
+            title={colapsadoVisual ? 'Cerrar sesión' : undefined}
           >
             <LogOut size={18} />
-            {!colapsado && 'Cerrar sesión'}
+            {!colapsadoVisual && 'Cerrar sesión'}
           </button>
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-5">
-        {children}
-      </main>
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        {/* Barra superior móvil (ver cabecera del archivo): solo visible
+            <768px (md:hidden) — en desktop el <aside> ya está siempre a la
+            vista, así que esta barra no hace falta ahí. */}
+        <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-slate-200 dark:border-white/10 bg-white dark:bg-[#0E1015] sticky top-0 z-20">
+          <button
+            type="button"
+            onClick={() => setMenuMovilAbierto(true)}
+            className="!border-0 !bg-transparent !text-slate-600 dark:!text-slate-300 hover:!bg-slate-100 dark:hover:!bg-slate-800 rounded-md p-1.5 shrink-0"
+            title="Abrir menú"
+          >
+            <Menu size={22} />
+          </button>
+          <img src={logo} alt="Logo de la empresa" className="h-7 w-auto" />
+        </div>
+
+        <main className="flex-1 p-3 sm:p-5">
+          {/* Roles/permisos: aviso de qué se está viendo cuando un manager NO
+              está en "Mis datos" — la mayoría de las pantallas cambian de
+              contenido por completo al cambiar la selección, así que conviene
+              que quede claro sin tener que mirar el Sidebar. */}
+          {esManager && idUsuarioViendo && (
+            <div className="mb-4 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-xs text-amber-800 dark:text-amber-300">
+              Viendo como manager: {
+                idUsuarioViendo === TODOS_LOS_USUARIOS
+                  ? 'todos los usuarios (datos agregados)'
+                  : (listaUsuarios.find(u => u.id === idUsuarioViendo)?.email || idUsuarioViendo)
+              }
+            </div>
+          )}
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

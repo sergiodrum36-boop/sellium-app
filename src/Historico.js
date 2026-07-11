@@ -2,14 +2,29 @@
  * Historico.js (Versión 5.5 - Rediseño visual Fase 3)
  * Cambios sobre la 5.4: solo la maquetación pasa a Tailwind CSS (con
  * soporte de modo oscuro). La lógica de filtrado/borrado no cambia.
+ *
+ * CAMBIO (paginación, a petición de Sergio - repaso/auditoría de la app):
+ * la tabla ya no pinta TODOS los movimientos filtrados de golpe (con mucho
+ * histórico acumulado podían ser miles de filas). Ver usePaginacion.js —
+ * los TOTALES y la exportación a Excel siguen usando `movimientosFiltrados`
+ * completo, sin paginar; solo el <tbody> usa la página actual.
+ *
+ * CAMBIO (papelera, a petición de Sergio): "Borrar" ya no elimina el
+ * registro de Firestore de verdad — lo mueve a la papelera (recuperable
+ * desde la nueva pantalla "Papelera", en Herramientas), ver
+ * firebaseApi.js/moverAPapelera. Cada borrado queda además registrado en
+ * "Auditoría".
  */
 
 import React, { useState, useEffect } from 'react';
-import { deleteDocument } from './firebaseApi';
+import { moverAPapelera } from './firebaseApi';
+import { auth } from './firebaseConfig';
 import * as XLSX from 'xlsx';
 import { valorRegaladas, valorMuestras, valorAcuerdo, unidadesAcuerdo, gastoTotal } from './calculosAP';
 import { inputClasses, botonSecundario, botonExito, botonPeligro, etiqueta, filtroContenedor, thClasses, tdClasses, tdRightClasses, trTotales } from './uiClasses';
 import SelectorMesAno from './SelectorMesAno';
+import usePaginacion, { TAMAÑO_PAGINA_DEFECTO } from './usePaginacion';
+import Paginacion from './Paginacion';
 
 const formateadorMoneda = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 
@@ -107,19 +122,30 @@ function Historico({ idDistribuidor, marcas, listaDistribuidores, historicoSellO
     XLSX.writeFile(workbook, nombreArchivo);
   };
 
-  const handleBorrarMovimiento = async (docId, nombreMarca, mes) => {
-    if (!window.confirm(`¿Está seguro de que desea eliminar el registro de ${nombreMarca} para el mes ${mes}? Esta acción no se puede deshacer.`)) {
+  const handleBorrarMovimiento = async (mov, nombreMarca) => {
+    if (!window.confirm(`¿Mover a la papelera el registro de ${nombreMarca} para el mes ${mov.mes_ano}? Podrás recuperarlo desde "Papelera" (Herramientas) si fue un error.`)) {
       return;
     }
     try {
-      await deleteDocument('historicoSellOut', docId);
+      await moverAPapelera('historicoSellOut', mov.id, {
+        idUsuario: mov.id_usuario,
+        actorUid: auth.currentUser?.uid,
+        actorEmail: auth.currentUser?.email,
+        resumen: `Sell-Out: ${nombreMarca} · ${mov.mes_ano}`
+      });
       onDataDeleted();
-      alert("Registro borrado con éxito.");
+      alert("Registro movido a la papelera.");
     } catch (error) {
       console.error("Error al borrar:", error);
       alert("Error al borrar el registro: " + error.message);
     }
   };
+
+  // Paginación (ver usePaginacion.js): SIEMPRE sobre movimientosFiltrados
+  // completo, nunca sobre una versión recortada — los totales de abajo y la
+  // exportación a Excel de arriba usan movimientosFiltrados igual que
+  // antes, sin paginar.
+  const { pagina, totalPaginas, itemsPagina, irPaginaAnterior, irPaginaSiguiente } = usePaginacion(movimientosFiltrados);
 
   if (cargando) {
     return <div className="text-slate-500 dark:text-slate-400">Actualizando datos...</div>;
@@ -188,7 +214,7 @@ function Historico({ idDistribuidor, marcas, listaDistribuidores, historicoSellO
           </thead>
           <tbody>
             {movimientosFiltrados.length > 0 ? (
-              movimientosFiltrados.map(mov => {
+              itemsPagina.map(mov => {
                 const nombreMarca = mapaMarcas.get(mov.id_marca) || 'Marca Desconocida';
                 return (
                   <tr key={mov.id}>
@@ -208,7 +234,7 @@ function Historico({ idDistribuidor, marcas, listaDistribuidores, historicoSellO
                     <td className={`${tdClasses} text-center`}>
                       <button
                         className={botonPeligro}
-                        onClick={() => handleBorrarMovimiento(mov.id, nombreMarca, mov.mes_ano)}
+                        onClick={() => handleBorrarMovimiento(mov, nombreMarca)}
                       >
                         Borrar
                       </button>
@@ -244,6 +270,15 @@ function Historico({ idDistribuidor, marcas, listaDistribuidores, historicoSellO
           </tbody>
         </table>
       </div>
+
+      <Paginacion
+        pagina={pagina}
+        totalPaginas={totalPaginas}
+        totalRegistros={movimientosFiltrados.length}
+        tamañoPagina={TAMAÑO_PAGINA_DEFECTO}
+        onAnterior={irPaginaAnterior}
+        onSiguiente={irPaginaSiguiente}
+      />
     </div>
   );
 }

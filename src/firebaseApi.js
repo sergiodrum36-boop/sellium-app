@@ -13,7 +13,9 @@ import {
   addDoc,
   writeBatch, // <-- ¡COMA AÑADIDA ARRIBA Y LISTADO COMPLETO!
   doc,
-  deleteDoc
+  deleteDoc,
+  setDoc,
+  getDoc
 } from "firebase/firestore";
 // NOTA IMPORTANTE: las reglas de seguridad de Firestore de este proyecto
 // bloquean las operaciones "update" ("Missing or insufficient permissions"),
@@ -21,6 +23,72 @@ import {
 // datos ya guardados (año, marca, etc.) se hace SIEMPRE como "crear un
 // documento nuevo con los datos corregidos + borrar el documento antiguo",
 // nunca con updateDoc/batch.update.
+//
+// EXCEPCIÓN (papelera, ver sección 22 al final del archivo): historicoSellIn
+// e historicoSellOut sí permiten un "update" muy acotado, solo para marcar
+// un documento como eliminado/restaurado (campos eliminado/eliminado_en/
+// eliminado_por) — las reglas de Firestore rechazan cualquier otro campo en
+// ese update. Ningún dato de negocio se actualiza nunca; sigue siendo
+// "borrar + recrear" para cualquier corrección real.
+
+// --- 0. PERFILES DE USUARIO (roles/permisos) ---
+// Ver firestore.rules (colección usuarios) para el porqué: el rol vive en
+// usuarios/{uid}, se crea siempre como 'usuario' desde el cliente (nadie
+// puede auto-promocionarse) y solo se asciende a 'manager' con
+// setManagerRole.js, ejecutado fuera de la app.
+
+// CAMBIO (roles/permisos, Fase 2 — vista "Todos los usuarios", a petición
+// de Sergio): sentinel especial para el selector "Viendo como" (Layout.js/
+// App.js). Cuando idUsuario vale esto, las funciones "Generales" de más
+// abajo (las que ya traían TODO el histórico de un usuario, sin filtrar por
+// distribuidor) devuelven los documentos de TODOS los usuarios en vez de
+// filtrar por uno solo, para las 4 pantallas de análisis (Dashboard,
+// Dashboard A&P Compañía, Reportes, Dashboard de Ventas Reales). Quien de
+// verdad autoriza esa lectura ampliada es la regla esManager() de
+// firestore.rules — este sentinel por sí solo no se salta ningún permiso:
+// un usuario normal que lo usara simplemente recibiría un
+// "permission-denied" en cuanto Firestore evaluara la regla sobre un
+// documento que no es suyo.
+export const TODOS_LOS_USUARIOS = '__TODOS__';
+
+// Envuelve una colección con el filtro where("id_usuario","==",idUsuario)
+// — salvo que idUsuario sea TODOS_LOS_USUARIOS, en cuyo caso devuelve la
+// colección tal cual, sin filtrar (getDocs acepta tanto una Query como una
+// CollectionReference, así que no hace falta distinguir el tipo de retorno
+// en cada función que use este helper).
+const conFiltroUsuario = (colRef, idUsuario) =>
+  idUsuario === TODOS_LOS_USUARIOS ? colRef : query(colRef, where("id_usuario", "==", idUsuario));
+
+// Se llama una única vez, justo tras registrarse (ver LoginScreen.js). Si el
+// perfil ya existiera (no debería, un uid nuevo es siempre nuevo) esto lo
+// sobrescribiría — no pasa en la práctica porque solo se llama en el alta.
+export const crearPerfilUsuario = async (uid, email) => {
+  console.log(`firebaseApi: Creando perfil de usuario para ${email}...`);
+  await setDoc(doc(db, "usuarios", uid), {
+    email,
+    rol: 'usuario',
+    fecha_alta: new Date().toISOString()
+  });
+};
+
+// Perfil (rol, email) del usuario autenticado — se llama justo tras el
+// login para saber si hay que mostrar el selector "Viendo como" (managers).
+// Devuelve null si por lo que sea el perfil no existe (p.ej. cuentas creadas
+// a mano en la consola de Firebase antes de este cambio, sin pasar por
+// LoginScreen) — App.js lo trata como rol 'usuario' por defecto en ese caso.
+export const getPerfilUsuario = async (uid) => {
+  const snap = await getDoc(doc(db, "usuarios", uid));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+};
+
+// Lista de TODOS los perfiles de usuario — solo la puede llamar con éxito un
+// manager (ver la regla `allow list` en firestore.rules); si la llama un
+// usuario normal, Firestore devuelve "permission-denied". Se usa para
+// rellenar el selector "Viendo como" en el Sidebar.
+export const getListaUsuarios = async () => {
+  const snapshot = await getDocs(collection(db, "usuarios"));
+  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+};
 
 // --- 1. LECTURA DE MARCAS (Global) ---
 export const getMarcasGlobales = async () => {
@@ -35,7 +103,7 @@ export const getMarcasGlobales = async () => {
 export const getDistribuidoresPorUsuario = async (idUsuario) => {
   console.log(`firebaseApi: Obteniendo distribuidores para el usuario ${idUsuario}...`);
   const distriCol = collection(db, "distribuidores");
-  const q = query(distriCol, where("id_usuario", "==", idUsuario));
+  const q = conFiltroUsuario(distriCol, idUsuario);
   const snapshot = await getDocs(q);
   const listaDistribuidores = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
   return listaDistribuidores;
@@ -140,7 +208,11 @@ export const getHistoricoSellIn = async (idUsuario, idDistribuidor) => {
             );
   const snapshot = await getDocs(q);
   const movimientos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  return movimientos;
+  // Papelera (ver sección 22 al final del archivo): los movimientos con
+  // eliminado===true no deben aparecer en ningún cálculo ni pantalla salvo
+  // en la propia Papelera. Los documentos antiguos (sin este campo) se
+  // conservan con normalidad — solo se excluyen los marcados explícitamente.
+  return movimientos.filter(m => m.eliminado !== true);
 };
 
 // --- 7. LECTURA DE HISTÓRICO SELL-OUT (Por Distribuidor) ---
@@ -153,7 +225,11 @@ export const getHistoricoSellOut = async (idUsuario, idDistribuidor) => {
             );
   const snapshot = await getDocs(q);
   const movimientos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  return movimientos;
+  // Papelera (ver sección 22 al final del archivo): los movimientos con
+  // eliminado===true no deben aparecer en ningún cálculo ni pantalla salvo
+  // en la propia Papelera. Los documentos antiguos (sin este campo) se
+  // conservan con normalidad — solo se excluyen los marcados explícitamente.
+  return movimientos.filter(m => m.eliminado !== true);
 };
 
 // --- 8. LECTURA DE SELL-IN POR MES (GENERAL - Reportes) ---
@@ -166,7 +242,11 @@ export const getSellInByMonth = async (idUsuario, mesAno) => {
             );
   const snapshot = await getDocs(q);
   const movimientos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  return movimientos;
+  // Papelera (ver sección 22 al final del archivo): los movimientos con
+  // eliminado===true no deben aparecer en ningún cálculo ni pantalla salvo
+  // en la propia Papelera. Los documentos antiguos (sin este campo) se
+  // conservan con normalidad — solo se excluyen los marcados explícitamente.
+  return movimientos.filter(m => m.eliminado !== true);
 };
 
 // --- 9. LECTURA DE SELL-OUT POR MES (GENERAL - Reportes) ---
@@ -179,7 +259,11 @@ export const getSellOutByMonth = async (idUsuario, mesAno) => {
             );
   const snapshot = await getDocs(q);
   const movimientos = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-  return movimientos;
+  // Papelera (ver sección 22 al final del archivo): los movimientos con
+  // eliminado===true no deben aparecer en ningún cálculo ni pantalla salvo
+  // en la propia Papelera. Los documentos antiguos (sin este campo) se
+  // conservan con normalidad — solo se excluyen los marcados explícitamente.
+  return movimientos.filter(m => m.eliminado !== true);
 };
 
 // --- 10. ESCRITURA DE NUEVA MARCA (Global) ---
@@ -200,8 +284,15 @@ export const deleteDocument = async (collectionName, docId) => {
   return true;
 };
 
-// --- 12. FUNCIÓN DE BORRADO DE HISTORIAL COMPLETO ---
-const deleteCollectionForUser = async (collectionName, idUsuario) => {
+// --- 12. FUNCIÓN DE BORRADO (SUAVE) DE HISTORIAL COMPLETO ---
+// CAMBIO (papelera + auditoría, a petición de Sergio): "Borrar TODO el
+// historial" (Mantenimiento.js) ya NO borra físicamente los documentos — los
+// marca como eliminados (mismo mecanismo que borrar una fila suelta en
+// Historico.js/HistoricoSellIn.js, ver sección 22) para poder recuperarlos
+// desde la Papelera si fue un error. Se registra UNA entrada de auditoría
+// por colección (no una por documento, para no inundar el registro en un
+// reseteo de cientos de filas).
+const deleteCollectionForUser = async (collectionName, idUsuario, actor) => {
   const colRef = collection(db, collectionName);
   const q = query(colRef, where("id_usuario", "==", idUsuario));
   const snapshot = await getDocs(q);
@@ -209,32 +300,47 @@ const deleteCollectionForUser = async (collectionName, idUsuario) => {
   if (snapshot.docs.length === 0) {
     return 0; // No hay documentos que borrar
   }
-  
-  const batch = writeBatch(db);
-  snapshot.docs.forEach((doc) => {
-    batch.delete(doc.ref);
+
+  const ahora = new Date().toISOString();
+  for (const grupo of chunkArray(snapshot.docs, CHUNK_SIZE)) {
+    const batch = writeBatch(db);
+    grupo.forEach((d) => {
+      batch.set(d.ref, { eliminado: true, eliminado_en: ahora, eliminado_por: actor?.uid || null }, { merge: true });
+    });
+    await batch.commit();
+  }
+
+  await registrarAuditoria({
+    idUsuario,
+    actorUid: actor?.uid,
+    actorEmail: actor?.email,
+    accion: 'reset_historico',
+    coleccion: collectionName,
+    idDocumento: null,
+    resumen: `Reseteo de mantenimiento: ${snapshot.docs.length} registro(s) movidos a la papelera.`
   });
-  
-  await batch.commit();
+
   return snapshot.docs.length;
 };
 
 /**
- * Función principal de reseteo: elimina solo datos transaccionales.
+ * Función principal de reseteo: mueve a la papelera (recuperable) solo
+ * datos transaccionales. `actor` = { uid, email } de quien ejecuta el
+ * reseteo, para dejarlo registrado en la auditoría.
  */
-export const resetUserHistory = async (idUsuario) => {
+export const resetUserHistory = async (idUsuario, actor) => {
   const colecciones = [
-    "historicoSellIn", 
+    "historicoSellIn",
     "historicoSellOut"
   ];
-  
+
   const resultados = {};
-  
+
   for (const col of colecciones) {
-    const count = await deleteCollectionForUser(col, idUsuario);
+    const count = await deleteCollectionForUser(col, idUsuario, actor);
     resultados[col] = count;
   }
-  
+
   return resultados;
 };
 
@@ -242,19 +348,18 @@ export const resetUserHistory = async (idUsuario) => {
 export const getHistoricoSellInGeneral = async (idUsuario) => {
   console.log(`firebaseApi: Leyendo TODO el Sell-In para ${idUsuario}...`);
   const historicoCol = collection(db, "historicoSellIn");
-  
-  const q = query(historicoCol, 
-              where("id_usuario", "==", idUsuario)
-            );
-            
+
+  const q = conFiltroUsuario(historicoCol, idUsuario);
+
   const snapshot = await getDocs(q);
   
   const movimientos = snapshot.docs.map(doc => ({
     id: doc.id,
     ...doc.data()
   }));
-  
-  return movimientos;
+
+  // Papelera (ver sección 22 al final del archivo): excluir eliminados.
+  return movimientos.filter(m => m.eliminado !== true);
 };
 
 // --- 14. LECTURA DE TODO EL SELL-OUT (GENERAL) ---
@@ -262,9 +367,7 @@ export const getHistoricoSellOutGeneral = async (idUsuario) => {
   console.log(`firebaseApi: Leyendo TODO el Sell-Out para ${idUsuario}...`);
   const historicoCol = collection(db, "historicoSellOut");
 
-  const q = query(historicoCol,
-              where("id_usuario", "==", idUsuario)
-            );
+  const q = conFiltroUsuario(historicoCol, idUsuario);
 
   const snapshot = await getDocs(q);
 
@@ -273,7 +376,8 @@ export const getHistoricoSellOutGeneral = async (idUsuario) => {
     ...doc.data()
   }));
 
-  return movimientos;
+  // Papelera (ver sección 22 al final del archivo): excluir eliminados.
+  return movimientos.filter(m => m.eliminado !== true);
 };
 
 // --- 15. BORRAR MOVIMIENTOS DE UN DISTRIBUIDOR EN UNOS MESES CONCRETOS ---
@@ -372,7 +476,7 @@ export const saveVentasReales = async (idUsuario, mesAno, filas) => {
 export const getVentasRealesGeneral = async (idUsuario) => {
   console.log(`firebaseApi: Leyendo TODO Ventas Reales para ${idUsuario}...`);
   const col = collection(db, "ventasReales");
-  const q = query(col, where("id_usuario", "==", idUsuario));
+  const q = conFiltroUsuario(col, idUsuario);
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
@@ -430,7 +534,7 @@ export const saveMapeoImportacion = async (idUsuario, tipo, nombreExcelNormaliza
 // --- 19b. LEER TODA LA MEMORIA DE RECONCILIACIÓN DE UN USUARIO ---
 export const getMapeoImportacion = async (idUsuario) => {
   const col = collection(db, "mapeoImportacion");
-  const q = query(col, where("id_usuario", "==", idUsuario));
+  const q = conFiltroUsuario(col, idUsuario);
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
@@ -518,7 +622,7 @@ export const deleteStockInicialPorDistribuidorYAnio = async (idUsuario, idDistri
 // varios distribuidores o todos, igual que getHistoricoSellInGeneral) ---
 export const getStockInicialGeneral = async (idUsuario) => {
   const col = collection(db, "stockInicialDistribuidor");
-  const q = query(col, where("id_usuario", "==", idUsuario));
+  const q = conFiltroUsuario(col, idUsuario);
   const snapshot = await getDocs(q);
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 };
@@ -596,5 +700,194 @@ export const saveTipologiaMarca = async (idMarca, tipologia) => {
     await batch.commit();
   }
   await addDoc(col, { id_marca: idMarca, tipologia });
+  return true;
+};
+
+// --- 22. PAPELERA (borrado suave) + AUDITORÍA ---
+// A petición de Sergio (mejora de "profesionalización" de la app, tras la
+// auditoría): los borrados de una fila suelta de Histórico Sell-In/Sell-Out
+// (Historico.js, HistoricoSellIn.js) y el reseteo completo de historial
+// (Mantenimiento.js) ya no borran el documento de Firestore de verdad — lo
+// marcan con `eliminado: true` (+ `eliminado_en`, `eliminado_por`) y lo
+// excluyen de todas las lecturas normales (ver el `.filter(m => m.eliminado
+// !== true)` en los getters de más arriba). Desde la nueva pantalla
+// "Papelera" se puede "Restaurar" (vuelve a `eliminado: false`) o "Eliminar
+// definitivamente" (ahí sí, deleteDoc real, sin vuelta atrás) cada fila.
+//
+// Esto requirió el único `allow update` de todo el proyecto (ver
+// firestore.rules): las reglas siguen bloqueando cualquier cambio de datos
+// de negocio (nunca se puede editar coste_unidad, unidades_compradas...) —
+// el `allow update` está acotado por código a que la escritura SOLO toque
+// los 3 campos de papelera (`eliminado`, `eliminado_en`, `eliminado_por`),
+// nada más. Cualquier corrección real sigue siendo "borrar + recrear" como
+// hasta ahora.
+//
+// De momento cubre historicoSellIn e historicoSellOut (los borrados que de
+// verdad hace un usuario desde la UI, fila a fila) y el reseteo completo de
+// Mantenimiento.js — no las colecciones donde "borrar" es un paso interno
+// de una operación más amplia (reimportar un Excel, fusionar marcas,
+// corregir un año...), que siguen siendo borrado físico normal, sin cambios.
+//
+// Además, cada acción (borrar/restaurar/eliminar definitivo/resetear) deja
+// una entrada en la nueva colección `auditoria` — quién la hizo, cuándo, y
+// un resumen legible — visible desde la nueva pantalla "Auditoría".
+
+// --- 22a. Registra una entrada de auditoría ---
+export const registrarAuditoria = async ({ idUsuario, actorUid, actorEmail, accion, coleccion, idDocumento, resumen }) => {
+  const col = collection(db, "auditoria");
+  await addDoc(col, {
+    id_usuario: idUsuario,
+    actor_uid: actorUid || null,
+    actor_email: actorEmail || null,
+    accion, // 'eliminar' | 'restaurar' | 'eliminar_definitivo' | 'reset_historico'
+    coleccion,
+    id_documento: idDocumento || null,
+    resumen: resumen || '',
+    fecha: new Date().toISOString()
+  });
+};
+
+// --- 22b. Mueve un documento a la papelera (borrado suave) + audita ---
+export const moverAPapelera = async (collectionName, docId, { idUsuario, actorUid, actorEmail, resumen }) => {
+  const ref = doc(db, collectionName, docId);
+  await setDoc(ref, {
+    eliminado: true,
+    eliminado_en: new Date().toISOString(),
+    eliminado_por: actorUid || null
+  }, { merge: true });
+  await registrarAuditoria({ idUsuario, actorUid, actorEmail, accion: 'eliminar', coleccion: collectionName, idDocumento: docId, resumen });
+  return true;
+};
+
+// --- 22c. Restaura un documento desde la papelera + audita ---
+export const restaurarDePapelera = async (collectionName, docId, { idUsuario, actorUid, actorEmail, resumen }) => {
+  const ref = doc(db, collectionName, docId);
+  await setDoc(ref, {
+    eliminado: false,
+    eliminado_en: null,
+    eliminado_por: null
+  }, { merge: true });
+  await registrarAuditoria({ idUsuario, actorUid, actorEmail, accion: 'restaurar', coleccion: collectionName, idDocumento: docId, resumen });
+  return true;
+};
+
+// --- 22d. Elimina definitivamente (borrado físico real, sin vuelta atrás)
+// un documento que ya estaba en la papelera + audita ---
+export const eliminarDefinitivamente = async (collectionName, docId, { idUsuario, actorUid, actorEmail, resumen }) => {
+  await deleteDocument(collectionName, docId);
+  await registrarAuditoria({ idUsuario, actorUid, actorEmail, accion: 'eliminar_definitivo', coleccion: collectionName, idDocumento: docId, resumen });
+  return true;
+};
+
+// --- 22e. Lee todos los documentos en la papelera (eliminado === true) de
+// una colección, para un usuario. Se trae todo el histórico del usuario
+// (mismo patrón que los getters "Generales") y se filtra en memoria — evita
+// tener que crear un índice compuesto en Firestore solo para esta pantalla,
+// que no es de uso frecuente. ---
+export const getPapelera = async (idUsuario, collectionName) => {
+  const col = collection(db, collectionName);
+  const q = query(col, where("id_usuario", "==", idUsuario));
+  const snapshot = await getDocs(q);
+  return snapshot.docs
+    .map(doc => ({ id: doc.id, ...doc.data() }))
+    .filter(d => d.eliminado === true);
+};
+
+// --- 22f. Lee el registro de auditoría de un usuario, más reciente primero ---
+export const getAuditoria = async (idUsuario) => {
+  const col = collection(db, "auditoria");
+  const q = query(col, where("id_usuario", "==", idUsuario));
+  const snapshot = await getDocs(q);
+  return snapshot.docs
+    .map(doc => ({ id: doc.id, ...doc.data() }))
+    .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+};
+
+// ==========================================================================
+// 23. PRESUPUESTOS (Objetivo Anual + Forecast, Fase 2 profesionalización)
+// ==========================================================================
+// A petición de Sergio, tras la auditoría de la app: un área propia y
+// separada de las pantallas de uso diario, porque el objetivo anual solo se
+// crea/revisa una o dos veces al año (ver PantallaPresupuesto.js).
+//
+// Un documento por (id_usuario, anio, id_distribuidor) — un objetivo
+// concreto por distribuidor y año.
+//
+// CAMBIO (rediseño "por marca", a petición de Sergio): el objetivo ya no se
+// fija repartiendo un total en 12 meses. Ahora, por cada marca, se guarda
+// solo el % de crecimiento deseado respecto al año anterior:
+//   objetivos_facturacion_marca: [{ id_marca, nombre_marca, pct_crecimiento }]
+//   objetivos_ap_marca:          [{ id_marca, nombre_marca, pct_crecimiento }]
+// El año anterior (cajas/importe de Facturación desde `ventasReales`, e
+// importe de A&P desde `historicoSellOut`) NO se guarda en este documento —
+// se recalcula siempre en caliente a partir del histórico real, para que si
+// se corrige un dato antiguo el objetivo/forecast lo reflejen sin tener que
+// re-guardar nada. El objetivo final (cajas/importe) sale de multiplicar
+// ese año anterior por (1 + pct_crecimiento/100). Ver PantallaPresupuesto.js.
+//
+// Igual que el resto de la app, NO hay `allow update` en firestore.rules
+// para esta colección: corregir un objetivo ya guardado es "borrar el
+// documento de ese año+distribuidor y crear uno nuevo" — por eso
+// `guardarPresupuesto` primero busca y borra el documento existente (si lo
+// hay) antes de crear el nuevo, en vez de intentar actualizarlo.
+
+// Busca el documento de presupuesto de un año+distribuidor concreto (o
+// null si el usuario aún no ha guardado ningún objetivo para esa
+// combinación). Se usa tanto para precargar el formulario de "Objetivo
+// Anual" como, internamente, por guardarPresupuesto para saber qué borrar.
+export const getPresupuesto = async (idUsuario, anio, idDistribuidor) => {
+  const col = collection(db, "presupuestos");
+  const q = query(
+    col,
+    where("id_usuario", "==", idUsuario),
+    where("anio", "==", anio),
+    where("id_distribuidor", "==", idDistribuidor)
+  );
+  const snapshot = await getDocs(q);
+  if (snapshot.empty) return null;
+  const docSnap = snapshot.docs[0];
+  return { id: docSnap.id, ...docSnap.data() };
+};
+
+// Todos los objetivos guardados de un usuario para un año concreto (uno por
+// distribuidor) — lo usa la pestaña "Forecast" para agregar "Todos sus
+// distribuidores" o para saber qué distribuidores ya tienen objetivo.
+export const getPresupuestosPorAnio = async (idUsuario, anio) => {
+  const col = collection(db, "presupuestos");
+  const q = query(col, where("id_usuario", "==", idUsuario), where("anio", "==", anio));
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+};
+
+// Guarda (crea o sustituye) el objetivo anual de un distribuidor concreto.
+// "Sustituye" = borra el documento anterior de ese mismo año+distribuidor
+// (si existía) y crea uno nuevo — nunca updateDoc, ver cabecera de sección.
+// `objetivosPorMarca` = { facturacion: [{id_marca, nombre_marca,
+// pct_crecimiento}], ap: [{id_marca, nombre_marca, pct_crecimiento}] }
+export const guardarPresupuesto = async (idUsuario, anio, idDistribuidor, objetivosPorMarca, actor) => {
+  const existente = await getPresupuesto(idUsuario, anio, idDistribuidor);
+  if (existente) {
+    await deleteDoc(doc(db, "presupuestos", existente.id));
+  }
+  const col = collection(db, "presupuestos");
+  const nuevoDoc = await addDoc(col, {
+    id_usuario: idUsuario,
+    anio,
+    id_distribuidor: idDistribuidor,
+    objetivos_facturacion_marca: objetivosPorMarca?.facturacion || [],
+    objetivos_ap_marca: objetivosPorMarca?.ap || [],
+    actualizado_en: new Date().toISOString(),
+    actor_uid: actor?.uid || null,
+    actor_email: actor?.email || null
+  });
+  return nuevoDoc.id;
+};
+
+// Borra por completo el objetivo de un año+distribuidor (botón "Borrar
+// objetivo" del formulario).
+export const deletePresupuesto = async (idUsuario, anio, idDistribuidor) => {
+  const existente = await getPresupuesto(idUsuario, anio, idDistribuidor);
+  if (!existente) return false;
+  await deleteDoc(doc(db, "presupuestos", existente.id));
   return true;
 };

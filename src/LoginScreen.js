@@ -4,12 +4,15 @@
  */
 
 import React, { useState } from 'react';
-import { auth } from './firebaseConfig'; 
-import { 
-  signInWithEmailAndPassword, 
+import { auth } from './firebaseConfig';
+import {
+  signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail
 } from "firebase/auth";
+// Roles/permisos (a petición de Sergio): al registrarse se crea el perfil
+// usuarios/{uid} con rol 'usuario' — ver firebaseApi.js y firestore.rules.
+import { crearPerfilUsuario } from './firebaseApi';
 // ¡Importamos el logo!
 import logo from './assets/logo.png'; 
 
@@ -39,6 +42,15 @@ function LoginScreen({ onLoginSuccess }) {
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       console.log("Nuevo usuario registrado:", userCredential.user.uid);
+      // Roles/permisos: crea el perfil (rol 'usuario' por defecto) antes de
+      // entrar a la app — si esto falla, dejamos entrar igualmente (el
+      // usuario ya está creado en Auth), App.js trata la ausencia de perfil
+      // como rol 'usuario'.
+      try {
+        await crearPerfilUsuario(userCredential.user.uid, email);
+      } catch (errPerfil) {
+        console.error("No se pudo crear el perfil de usuario:", errPerfil);
+      }
       onLoginSuccess(userCredential.user.uid);
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {

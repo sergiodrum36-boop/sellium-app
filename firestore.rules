@@ -12,48 +12,149 @@
  * debería aplicarse primero en la consola (o vía `firebase deploy
  * --only firestore:rules`) y reflejarse aquí después, para que este fichero
  * siga siendo un espejo fiable de lo publicado.
+ *
+ * CAMBIO (roles/permisos, a petición de Sergio): hasta ahora cada cuenta
+ * (id_usuario) era un jardín totalmente aislado — nadie podía leer los datos
+ * de otra cuenta, ni siquiera Sergio. Se añade un rol "manager" que puede
+ * LEER los datos de cualquier usuario (para hacer análisis "de solo un
+ * usuario o de todos en general"), pero sigue sin poder crear/borrar datos
+ * ajenos — solo los suyos propios, igual que cualquier usuario normal. El
+ * rol vive en la nueva colección `usuarios/{uid}` (campo `rol`: 'manager' |
+ * 'usuario'), creada automáticamente al registrarse (siempre como
+ * 'usuario' — nadie puede auto-promocionarse, ver más abajo) y solo se
+ * asciende a 'manager' a mano, ejecutando setManagerRole.js con las
+ * credenciales de administrador (fuera de la app, ver ese script).
+ *
+ * CAMBIO (papelera + auditoría, a petición de Sergio): se añade el ÚNICO
+ * `allow update` de todo el proyecto, acotado por código a que la escritura
+ * solo pueda tocar los 3 campos de "borrado suave" (`eliminado`,
+ * `eliminado_en`, `eliminado_por`) en historicoSellIn/historicoSellOut — ver
+ * `esSoloCambioPapelera()` más abajo y firebaseApi.js. Cualquier otro campo
+ * de negocio (coste_unidad, unidades_compradas...) sigue sin poder
+ * actualizarse nunca; las correcciones reales siguen siendo "borrar +
+ * recrear" como hasta ahora. También se añade la colección `auditoria`
+ * (registro inmutable de quién borró/restauró/reseteó qué y cuándo): solo
+ * se puede crear (nunca editar ni borrar), y solo puede leerla el dueño de
+ * los datos o un manager.
+ *
+ * CAMBIO (Fase 2 profesionalizacion, a peticion de Sergio): se anade la
+ * coleccion `presupuestos` (Objetivo Anual + Forecast, area propia en la
+ * app, ver PantallaPresupuesto.js). Mismo patron privado-por-usuario que
+ * distribuidores/historicos, sin `allow update`: corregir un objetivo ya
+ * guardado es "borrar el documento de ese ano+distribuidor y crear uno
+ * nuevo" (ver firebaseApi.js/guardarPresupuesto), igual que el resto de
+ * correcciones de la app.
  */
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // --- PERFILES DE USUARIO (rol: 'manager' | 'usuario') ---
+    // Cada usuario puede leer/crear SU PROPIO perfil (se crea una vez, al
+    // registrarse, siempre con rol 'usuario' desde el cliente — ver
+    // LoginScreen.js). Un manager puede leer el perfil de cualquiera (para
+    // poder listarlos en el selector "Viendo como"). Nadie puede actualizar
+    // el campo `rol` desde el cliente (ni un manager sobre sí mismo ni sobre
+    // otros) — deliberado: la única vía para conceder/quitar el rol de
+    // manager es el script setManagerRole.js, ejecutado a mano con
+    // credenciales de administrador, nunca desde la propia app.
+    match /usuarios/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid || esManager());
+      allow list: if request.auth != null && esManager();
+      allow create: if request.auth != null && request.auth.uid == uid
+                    && request.resource.data.rol == 'usuario';
+    }
+
     // --- MARCAS (catálogo global, compartido por todos los usuarios) ---
     match /marcas/{docId} {
       allow read, create, delete: if request.auth != null;
     }
-    // --- DISTRIBUIDORES (privado por usuario) ---
+    // --- DISTRIBUIDORES (privado por usuario; lectura también para managers) ---
     match /distribuidores/{docId} {
-      allow read, delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
     }
     // --- HISTÓRICO SELL-IN (compras) ---
     match /historicoSellIn/{docId} {
-      allow read, delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+      // Papelera (borrado suave): ver CAMBIO en la cabecera del archivo.
+      allow update: if request.auth != null && request.auth.uid == resource.data.id_usuario && esSoloCambioPapelera();
     }
     // --- HISTÓRICO SELL-OUT (ventas y A&P) ---
     match /historicoSellOut/{docId} {
-      allow read, delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+      // Papelera (borrado suave): ver CAMBIO en la cabecera del archivo.
+      allow update: if request.auth != null && request.auth.uid == resource.data.id_usuario && esSoloCambioPapelera();
     }
     // --- VENTAS REALES (import mensual QlikSense) ---
     match /ventasReales/{docId} {
-      allow read, delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
     }
     // --- MEMORIA DE RECONCILIACIÓN DEL IMPORTADOR DE VENTAS REALES ---
     match /mapeoImportacion/{docId} {
-      allow read, delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
     }
     // --- STOCK INICIAL DECLARADO (columna "Stock Inicial" del Excel de liquidación) ---
     match /stockInicialDistribuidor/{docId} {
-      allow read, delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
       allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
     }
     match /tipologiasMarca/{tipologiaId} {
-  allow read: if request.auth != null;
-  allow create: if request.auth != null;
-  allow delete: if request.auth != null;
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow delete: if request.auth != null;
+    }
+
+    // --- AUDITORÍA (registro inmutable de acciones: borrar/restaurar/
+    // eliminar definitivo/resetear historial) ---
+    // Solo se puede crear (nunca editar ni borrar, ni siquiera un manager)
+    // — es un registro de lo que pasó, no un dato de trabajo. Cada entrada
+    // solo la puede crear el propio actor que hizo la acción (no se puede
+    // registrar una entrada "en nombre de" otro uid). Solo puede leer el
+    // registro el dueño de los datos afectados o un manager.
+    match /auditoria/{docId} {
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.actor_uid;
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+    }
+
+    // --- PRESUPUESTOS (Objetivo Anual + Forecast, Fase 2 profesionalización) ---
+    // Un documento por (id_usuario, anio, id_distribuidor). Mismo patrón
+    // privado-por-usuario que distribuidores/históricos: sin `allow update`
+    // — corregir un objetivo ya guardado es borrar ese documento y crear uno
+    // nuevo (ver firebaseApi.js/guardarPresupuesto).
+    match /presupuestos/{docId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+
+    // Devuelve true si el usuario autenticado tiene rol 'manager' en
+    // usuarios/{uid}. Usa get() (una lectura extra a Firestore por regla
+    // evaluada), el patrón estándar para "roles" en reglas de Firestore
+    // cuando no se usan custom claims de Auth.
+    function esManager() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/usuarios/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'manager';
+    }
+
+    // Papelera (borrado suave): true solo si la escritura cambia
+    // EXCLUSIVAMENTE los 3 campos de papelera, nunca ningún dato de
+    // negocio. `diff().affectedKeys()` compara los datos nuevos contra los
+    // que ya había en el documento.
+    function esSoloCambioPapelera() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['eliminado', 'eliminado_en', 'eliminado_por']);
     }
   }
 }

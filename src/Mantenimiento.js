@@ -2,10 +2,16 @@
  * Mantenimiento.js (Versión 1.1 - Rediseño visual Fase 3)
  * Cambios sobre la versión anterior: solo la maquetación pasa a Tailwind CSS
  * (con soporte de modo oscuro). La lógica de borrado no cambia.
+ *
+ * CAMBIO (papelera, a petición de Sergio): el reseteo ya NO borra los
+ * registros de Firestore de verdad — los mueve a la papelera (recuperables
+ * desde "Papelera", uno a uno, o desde el registro de "Auditoría" para ver
+ * qué se reseteó y cuándo). Ver firebaseApi.js/resetUserHistory.
  */
 
 import React, { useState } from 'react';
 import { resetUserHistory } from './firebaseApi';
+import { auth } from './firebaseConfig';
 import { inputClasses, etiqueta } from './uiClasses';
 
 function Mantenimiento({ idUsuario, onResetApp }) {
@@ -20,24 +26,27 @@ function Mantenimiento({ idUsuario, onResetApp }) {
             return;
         }
 
-        if (!window.confirm("¡ADVERTENCIA GRAVE! Está a punto de borrar TODO el historial de compras, ventas y A&P (Sell-In y Sell-Out) de SU cuenta. Sus distribuidores y marcas NO se borrarán. ¿Está 100% seguro?")) {
+        if (!window.confirm("Está a punto de mover a la papelera TODO el historial de compras, ventas y A&P (Sell-In y Sell-Out) de SU cuenta. Sus distribuidores y marcas NO se tocan. Podrá recuperar registros concretos desde \"Papelera\" si fue un error. ¿Continuar?")) {
             return;
         }
 
         setCargando(true);
         try {
-            // 1. Llamar a la API para borrar los datos
-            const resultados = await resetUserHistory(idUsuario);
+            // 1. Llamar a la API para mover los datos a la papelera
+            const resultados = await resetUserHistory(idUsuario, {
+                uid: auth.currentUser?.uid,
+                email: auth.currentUser?.email
+            });
 
             // 2. Avisar a la aplicación principal para que recargue la vista
             onResetApp();
 
-            // 3. Mostrar resumen de lo borrado
-            alert(`✅ Eliminación completada con éxito. Se borraron:
+            // 3. Mostrar resumen de lo movido a la papelera
+            alert(`✅ Reseteo completado con éxito. Se movieron a la papelera:
 - ${resultados.historicoSellIn || 0} Registros de Compras (Sell-In).
 - ${resultados.historicoSellOut || 0} Registros de Ventas/A&P (Sell-Out).
 
-Sus distribuidores y marcas se han conservado.`);
+Sus distribuidores y marcas se han conservado. Puede recuperar registros concretos desde "Papelera" (Herramientas).`);
 
         } catch (error) {
             console.error("Error al resetear la historia:", error);
@@ -53,7 +62,7 @@ Sus distribuidores y marcas se han conservado.`);
                 <h4 className="text-red-700 dark:text-red-400 font-semibold mb-3">⚠️ Borrar TODO el Historial de su Cuenta</h4>
 
                 <p className="text-sm text-slate-700 dark:text-slate-300 mb-2">
-                    Esta acción es irreversible y <strong>eliminará permanentemente</strong> todos los registros transaccionales (Histórico Sell-In e Histórico Sell-Out) asociados a <strong>su ID de usuario</strong>. Sus distribuidores y marcas maestras NO se eliminan.
+                    Esta acción mueve a la <strong>papelera</strong> todos los registros transaccionales (Histórico Sell-In e Histórico Sell-Out) asociados a <strong>su ID de usuario</strong> — no los borra de forma permanente, pero desaparecen de todas las pantallas hasta que los recupere desde "Papelera" (Herramientas). Sus distribuidores y marcas maestras NO se tocan.
                 </p>
                 <p className="text-sm text-slate-700 dark:text-slate-300">
                     Utilice esta opción para limpiar datos de prueba y poner su aplicación a cero.

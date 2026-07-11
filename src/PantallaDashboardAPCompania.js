@@ -65,8 +65,11 @@ import {
 } from './firebaseApi';
 import { valorRegaladas, valorMuestras, valorAcuerdo, valorAportacionManual, generadoSellIn, gastoTotal } from './calculosAP';
 import { Coins, CreditCard, Scale, Percent } from 'lucide-react';
-import { inputClasses, botonPrimario, botonSecundario, filtroContenedor, colorPorSigno } from './uiClasses';
+import { inputClasses, botonPrimario, botonSecundario, botonExito, filtroContenedor, colorPorSigno } from './uiClasses';
 import PeriodoComparador from './PeriodoComparador';
+// Exportar a PDF (resumen ejecutivo de KPIs), a petición de Sergio — ver
+// pdfExport.js.
+import { crearDocumentoPdf, añadirTablaKpis, descargarPdf } from './pdfExport';
 
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell, LineChart, Line,
@@ -397,6 +400,20 @@ function PantallaDashboardAPCompania({ idUsuario }) {
     procesar(rawSellIn, rawSellOut, rawStockInicial, def, rangosPorAnio, mapaMarcas, mapaDistribuidores, marcas);
   };
 
+  // Exportar a PDF (resumen ejecutivo de los 4 KPIs, ver pdfExport.js) — a
+  // petición de Sergio. Mismo patrón que PantallaDashboard.js.
+  const handleExportarPdf = () => {
+    const años = rangosPorAnio.map(r => r.anio).join(', ');
+    const doc = crearDocumentoPdf('Dashboard A&P Visión Compañía', años ? `Años: ${años}` : undefined);
+    añadirTablaKpis(doc, [
+      { label: 'A&P Generado Total', valorBase: formateadorMoneda.format(kpis.generado) },
+      { label: 'A&P Gastado Total', valorBase: formateadorMoneda.format(kpis.gastado) },
+      { label: 'Diferencia (Balance)', valorBase: formateadorMoneda.format(kpis.diferencia) },
+      { label: '% Gastado / Generado', valorBase: formatearPorcentaje(kpis.porcentaje) },
+    ]);
+    descargarPdf(doc, `Dashboard_AP_Compania_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
   // TARJETAS INTERACTIVAS: clic en una barra de "A&P Generado vs. Gastado
   // por Marca" o de "Top 5 Distribuidores por Gasto de A&P" filtra TODO el
   // dashboard a ese elemento — mismo patrón que el Dashboard de Gestión.
@@ -476,7 +493,10 @@ function PantallaDashboardAPCompania({ idUsuario }) {
         </p>
       )}
 
-      <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mt-7 mb-3">KPIs Principales</h3>
+      <div className="flex justify-between items-center mt-7 mb-3">
+        <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">KPIs Principales</h3>
+        <button onClick={handleExportarPdf} className={botonExito}>Exportar a PDF</button>
+      </div>
       <div className="flex flex-wrap gap-4">
         <KpiBox
           titulo="A&P GENERADO TOTAL"
@@ -509,7 +529,7 @@ function PantallaDashboardAPCompania({ idUsuario }) {
       </div>
 
       <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mt-7 mb-3">Visualizaciones</h3>
-      <div className="grid gap-5 grid-cols-[repeat(auto-fit,minmax(440px,1fr))]">
+      <div className="grid gap-5 grid-cols-[repeat(auto-fit,minmax(min(440px,100%),1fr))]">
 
         <GraficoBox titulo={`A&P Generado (Sell-In + Stock Inicial) vs. Gastado por Marca ${datosGrafico1.length === 10 ? '(Top 10)' : ''}`}>
           {/* Barra horizontal: evita que se corten los nombres de marca

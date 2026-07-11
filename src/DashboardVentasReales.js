@@ -89,6 +89,21 @@
  * TipologiaReferencias; solo se usa el nombre denormalizado de la venta
  * como último recurso para referencias huérfanas (id_marca sin documento
  * en `marcas`).
+ *
+ * CAMBIO (paginación, a petición de Sergio - repaso/auditoría de la app):
+ * la tabla "Detalle" pintaba TODAS las filas de `filasTabla` de golpe — con
+ * un año completo de Ventas Reales importadas (todos los distribuidores x
+ * todas las marcas x 12 meses) fácilmente son miles de filas. Ver
+ * usePaginacion.js. La exportación a Excel (`handleExportarExcel`) sigue
+ * usando `filasTabla` completo, sin paginar.
+ *
+ * CAMBIO (exportar a PDF, a petición de Sergio): nuevo botón "Exportar KPIs
+ * a PDF" junto a "Exportar a Excel", con estilo `botonSecundario` para
+ * diferenciarlo visualmente (el de Excel sigue en verde/`botonExito`). A
+ * diferencia de Excel, que vuelca `filasTabla` completo (el detalle línea a
+ * línea del año base), el PDF (`handleExportarPdf`, ver pdfExport.js) es un
+ * resumen ejecutivo con los 7 KPIs que ya se ven en pantalla, comparando
+ * año base vs. año de comparación cuando hay dos años marcados.
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
@@ -104,6 +119,14 @@ import {
 } from './uiClasses';
 import PeriodoComparador from './PeriodoComparador';
 import { inferirTipologiaPorNombre } from './tipologia';
+// Exportar a PDF (resumen ejecutivo de los 7 KPIs), a petición de Sergio —
+// ver pdfExport.js. A diferencia de handleExportarExcel (que exporta
+// filasTabla, el detalle línea a línea del año base), esto exporta la
+// misma tabla de KPIs que ya se ve en pantalla, con año base vs. año de
+// comparación cuando hay dos años marcados.
+import { crearDocumentoPdf, añadirTablaKpis, descargarPdf } from './pdfExport';
+import usePaginacion, { TAMAÑO_PAGINA_DEFECTO } from './usePaginacion';
+import Paginacion from './Paginacion';
 
 const formateadorMoneda = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 const formateadorMonedaCorta = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
@@ -596,6 +619,11 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
     [...filasAnioBase].sort((a, b) => (b.mes_ano || '').localeCompare(a.mes_ano || '')),
   [filasAnioBase]);
 
+  // Paginación de la tabla "Detalle" (ver usePaginacion.js y cabecera del
+  // archivo). handleExportarExcel, más abajo, sigue usando filasTabla
+  // completo — la paginación es solo para lo que se pinta en pantalla.
+  const { pagina, totalPaginas, itemsPagina, irPaginaAnterior, irPaginaSiguiente } = usePaginacion(filasTabla);
+
   const handleLimpiarFiltros = () => {
     setFiltros({ idsDistribuidor: [], familias: [], idsMarca: [], tipologias: [] });
   };
@@ -664,6 +692,62 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Ventas Reales");
     XLSX.writeFile(workbook, `VentasReales_${anioBase || 'sin_datos'}.xlsx`);
+  };
+
+  // Exportar a PDF (resumen ejecutivo de los 7 KPIs, ver pdfExport.js) — a
+  // petición de Sergio. Los KPIs "de texto" (concentración, tipología
+  // principal) van como valorBase/valorComparacion ya formateados en texto
+  // (no tiene sentido una columna "Variación" separada para ellos además del
+  // texto, así que su delta no se pasa por separado salvo donde ya existe
+  // como número comparable).
+  const handleExportarPdf = () => {
+    const subtitulo = `Año ${anioBase}${anioComparacion ? ` vs. ${anioComparacion}` : ''}`;
+    const doc = crearDocumentoPdf('Dashboard de Ventas Reales', subtitulo);
+    añadirTablaKpis(doc, [
+      {
+        label: 'Unidades Vendidas',
+        valorBase: formateadorNumero.format(kpisBase.uds),
+        valorComparacion: kpisComparacion ? formateadorNumero.format(kpisComparacion.uds) : null,
+        delta: deltaUds,
+      },
+      {
+        label: 'Cajas Vendidas',
+        valorBase: formateadorNumero.format(Math.round(kpisBase.cajas)),
+        valorComparacion: kpisComparacion ? formateadorNumero.format(Math.round(kpisComparacion.cajas)) : null,
+        delta: deltaCajas,
+      },
+      {
+        label: 'Importe Total',
+        valorBase: formateadorMoneda.format(kpisBase.importe),
+        valorComparacion: kpisComparacion ? formateadorMoneda.format(kpisComparacion.importe) : null,
+        delta: deltaImporte,
+      },
+      {
+        label: 'Precio Medio / Ud',
+        valorBase: formateadorMoneda.format(kpisBase.precioMedio),
+        valorComparacion: kpisComparacion ? formateadorMoneda.format(kpisComparacion.precioMedio) : null,
+        delta: deltaPrecioMedio,
+      },
+      {
+        label: 'Concentración 80/20 (Distribuidores)',
+        valorBase: concentracionDistribuidorBase ? `${concentracionDistribuidorBase.cantidad} distrib. (${concentracionDistribuidorBase.pctEntidades.toFixed(0)}%)` : '—',
+        valorComparacion: concentracionDistribuidorComparacion ? `${concentracionDistribuidorComparacion.cantidad} distrib. (${concentracionDistribuidorComparacion.pctEntidades.toFixed(0)}%)` : null,
+        delta: deltaConcentracionDistribuidor,
+      },
+      {
+        label: 'Concentración 80/20 (Familias)',
+        valorBase: concentracionFamiliaBase ? `${concentracionFamiliaBase.cantidad} familias (${concentracionFamiliaBase.pctEntidades.toFixed(0)}%)` : '—',
+        valorComparacion: concentracionFamiliaComparacion ? `${concentracionFamiliaComparacion.cantidad} familias (${concentracionFamiliaComparacion.pctEntidades.toFixed(0)}%)` : null,
+        delta: deltaConcentracionFamilia,
+      },
+      {
+        label: 'Tipología Principal',
+        valorBase: tipologiaPrincipalBase ? `${tipologiaPrincipalBase.nombre} · ${tipologiaPrincipalBase.pct.toFixed(0)}%` : '—',
+        valorComparacion: tipologiaPrincipalComparacion ? `${tipologiaPrincipalComparacion.nombre} · ${tipologiaPrincipalComparacion.pct.toFixed(0)}%` : null,
+        delta: deltaTipologiaPrincipal,
+      },
+    ], { anioBase, anioComparacion });
+    descargarPdf(doc, `Dashboard_VentasReales_${anioBase || 'sin_datos'}.pdf`);
   };
 
   return (
@@ -845,7 +929,7 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
           </div>
 
           <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mt-7 mb-3">Visualizaciones</h4>
-          <div className="grid gap-5 grid-cols-[repeat(auto-fit,minmax(440px,1fr))]">
+          <div className="grid gap-5 grid-cols-[repeat(auto-fit,minmax(min(440px,100%),1fr))]">
 
             <GraficoBox titulo={anioComparacion ? `Importe por Distribuidor (Top 8) — ${anioBase} vs. ${anioComparacion}` : `Importe por Distribuidor (Top 8) — ${anioBase}`}>
               {/* Tarjeta interactiva: clic en una barra filtra todo el dashboard a ese
@@ -1078,7 +1162,10 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
 
           <div className="flex justify-between items-center mt-8 mb-3">
             <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">Detalle — {anioBase}</h4>
-            <button onClick={handleExportarExcel} className={botonExito}>Exportar a Excel</button>
+            <div className="flex gap-2">
+              <button onClick={handleExportarPdf} className={botonSecundario}>Exportar KPIs a PDF</button>
+              <button onClick={handleExportarExcel} className={botonExito}>Exportar a Excel</button>
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
@@ -1096,7 +1183,7 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
               </thead>
               <tbody>
                 {filasTabla.length > 0 ? (
-                  filasTabla.map(f => (
+                  itemsPagina.map(f => (
                     <tr key={f.id}>
                       <td className={tdClasses}>{f.mes_ano}</td>
                       <td className={`${tdClasses} font-semibold`}>{f.nombre_distribuidor}</td>
@@ -1133,6 +1220,15 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
               </tbody>
             </table>
           </div>
+
+          <Paginacion
+            pagina={pagina}
+            totalPaginas={totalPaginas}
+            totalRegistros={filasTabla.length}
+            tamañoPagina={TAMAÑO_PAGINA_DEFECTO}
+            onAnterior={irPaginaAnterior}
+            onSiguiente={irPaginaSiguiente}
+          />
         </>
       )}
     </div>

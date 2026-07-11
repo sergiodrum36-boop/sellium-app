@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "app-gestion-comercial-unesdi",
     "public": "build",
     "ignore": [
       "firebase.json",
