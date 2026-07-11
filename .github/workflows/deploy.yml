@@ -22,7 +22,11 @@ jobs:
           cache: 'npm'
 
       - name: Instalar dependencias
-        run: npm ci
+        # Usamos "npm install" en vez de "npm ci" porque package-lock.json
+        # no estaba perfectamente sincronizado con package.json (npm ci
+        # exige coincidencia exacta y fallaba). "npm install" es mas
+        # tolerante y actualiza el lock si hace falta.
+        run: npm install
 
       - name: Generar la version de produccion (build)
         run: npm run build
