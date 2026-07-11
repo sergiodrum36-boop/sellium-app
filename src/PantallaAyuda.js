@@ -1,145 +1,259 @@
 /*
- * PantallaAyuda.js (NUEVO)
- * Muestra un modal (ventana emergente) con las
- * instrucciones de uso de la aplicación.
+ * PantallaAyuda.js (Versión 2.0 — actualizada, a petición de Sergio)
+ * El contenido anterior describía una versión muy antigua de la app (sin
+ * Presupuesto y Forecast, Recuperación de Ventas, Dashboards, Tipología,
+ * Alertas, roles de manager, modo oscuro...) y usaba un modal con estilos
+ * en línea (inline styles) que no respetaba el modo oscuro ni el resto de
+ * la identidad visual (Tailwind) del rediseño. Se rehace por completo:
+ *  - Contenido reorganizado en secciones que reflejan el menú actual tal
+ *    cual está en Layout.js (mismo orden: accesos de nivel superior, grupo
+ *    "Gestión por Distribuidor" con sus 4 subcategorías, grupo "Dashboard").
+ *  - Modal reconstruido con las mismas clases Tailwind que el resto de
+ *    modales de la app (ver el patrón en PantallaDistribuidor.js: overlay
+ *    "fixed inset-0 z-50 bg-black/40" + caja "bg-white dark:bg-slate-800
+ *    rounded-xl"), así que ahora sí respeta el modo oscuro.
+ *  - Nuevo: botón "Descargar en PDF" (a petición de Sergio: "con formato
+ *    para descarga") que genera un PDF con el mismo contenido, para poder
+ *    guardarlo o compartirlo fuera de la app. Reutiliza crearDocumentoPdf/
+ *    descargarPdf de pdfExport.js para la cabecera (título + fecha) y el
+ *    mismo estilo de color que el resto de PDFs de la app; el cuerpo (texto
+ *    con párrafos y listas) se maqueta a mano con jsPDF porque no es una
+ *    tabla de KPIs como el resto de exportaciones a PDF existentes.
  */
 
 import React from 'react';
+import { X, Download } from 'lucide-react';
+import { botonSecundario } from './uiClasses';
+import { crearDocumentoPdf, descargarPdf } from './pdfExport';
+
+// Contenido único, compartido entre lo que se ve en pantalla y lo que se
+// exporta a PDF — así nunca pueden quedar desincronizados entre sí.
+// Cada sección: título + una lista de bloques, donde cada bloque es texto
+// normal (string) o una lista (con `ordenada: true/false` y `items`).
+const SECCIONES = [
+  {
+    titulo: 'Qué es Sellium',
+    bloques: [
+      'Sellium es la aplicación de gestión comercial de UNESDI Premium Wines & Spirits para controlar la relación con sus distribuidores: compras (Sell-In), ventas (Sell-Out), presupuesto de A&P, forecast anual y varios análisis e informes.',
+      'El menú de la izquierda se organiza en accesos sueltos (arriba) y dos grupos desplegables: "Gestión por Distribuidor" y "Dashboard". Las secciones siguientes siguen ese mismo orden.',
+    ],
+  },
+  {
+    titulo: 'Gestión por Distribuidor',
+    bloques: [
+      'Es la pantalla de trabajo diario: introducir movimientos y consultar la situación de UN distribuidor concreto (elegido en el selector de la parte superior). Se organiza en 4 subcategorías desplegables, más "Importar Excel" suelto:',
+      {
+        ordenada: false,
+        items: [
+          '"Entrada de Datos" → "Ventas y A&P": registrar cada venta (Sell-Out) mes a mes por marca, junto con lo regalado, las muestras o la aportación de A&P de ese movimiento.',
+          '"Entrada de Datos" → "Compras": registrar las compras del distribuidor (Sell-In) mes a mes por marca.',
+          '"Control A&P" → "Control A&P": balance de A&P Generado (por las compras) frente a A&P Gastado (por las salidas), de ese distribuidor.',
+          '"Control A&P" → "Stock": inventario teórico del distribuidor (Stock Inicial + Compras − Salidas).',
+          '"Históricos" → "Histórico Sell-Out" / "Histórico Sell-In": el listado completo de todos los movimientos, con filtros por fecha y marca y exportación a Excel.',
+          '"Herramientas" → "Fusionar Marcas", "Corregir Año", "Mantenimiento", "Papelera" y "Auditoría": utilidades de mantenimiento de datos (ver aviso de corrección de errores más abajo).',
+          '"Importar Excel": para cargar movimientos masivos de un distribuidor desde un archivo.',
+        ],
+      },
+    ],
+  },
+  {
+    titulo: 'Dashboard',
+    bloques: [
+      'Grupo con dos vistas de análisis agregadas (no de un solo distribuidor, sino de todos a la vez):',
+      {
+        ordenada: false,
+        items: [
+          '"Gestión": KPIs y gráficos de A&P Generado (Compras + Stock Inicial) vs. Gastado, con filtros de distribuidor, marca y periodo.',
+          '"Ventas Sell-In (QlikSense)": KPIs y gráficos de las Ventas Reales importadas desde QlikSense, con filtros de Distribuidor, Familia, Subfamilia (Marca) y Tipología, y comparativa entre dos años.',
+        ],
+      },
+    ],
+  },
+  {
+    titulo: 'Importar Sell-In (QlikSense) y Tipología (bebidas)',
+    bloques: [
+      'Dos accesos ligados al mismo dataset de "Ventas Reales" (los datos que llegan cada mes desde QlikSense, con TODOS los distribuidores juntos):',
+      {
+        ordenada: false,
+        items: [
+          '"Importar Sell-In (QlikSense)": sube el Excel mensual con las compras reales de todos los distribuidores.',
+          '"Tipología (bebidas)": pantalla de mantenimiento para clasificar cada marca como Vino, Licor o Coctelería — ese dato alimenta los KPIs y gráficos de tipología del Dashboard de Ventas Sell-In.',
+        ],
+      },
+    ],
+  },
+  {
+    titulo: 'Reportes Generales',
+    bloques: [
+      'Pantalla dedicada a exportar datos brutos (totales por rango de fechas) para su análisis externo en Power BI: un botón para Compras (Sell-In) y otro para Ventas y Gastos (Sell-Out).',
+    ],
+  },
+  {
+    titulo: 'Presupuesto y Forecast',
+    bloques: [
+      'Define el objetivo anual del año siguiente, por distribuidor y por marca, y compara en tiempo real cómo va el año en curso frente a ese objetivo:',
+      {
+        ordenada: true,
+        items: [
+          '"Objetivo Anual": para cada distribuidor, se ve la Facturación y el A&P Gastado del año anterior por marca (calculados en vivo desde el histórico, nunca guardados aparte) y se introduce un % de crecimiento por marca — el objetivo se calcula automáticamente.',
+          '"Forecast": compara el objetivo guardado (sumado de todos los distribuidores) contra lo real acumulado en el año elegido, con el % cumplido y una proyección a fin de año.',
+        ],
+      },
+    ],
+  },
+  {
+    titulo: 'Recuperación de Ventas',
+    bloques: [
+      'Informe mensual para saber a qué distribuidores hay que prestar atención y qué venderles: compara, por distribuidor y por marca, lo comprado en un mes (o un rango de varios meses seguidos, con "Desde"/"Hasta") contra el mismo periodo del año anterior.',
+      {
+        ordenada: false,
+        items: [
+          'Cada distribuidor recibe un semáforo: Atención (cae 30% o más), Vigilar (cae entre 10% y 30%), Bien (estable o crece), o Sin histórico (si el año pasado facturó muy poco como para comparar de forma fiable).',
+          'Al seleccionar un distribuidor, se ve el detalle por marca de cuántas cajas y cuánto importe le faltan para igualar el año anterior — ordenado de mayor a menor oportunidad.',
+          'Exportable a Excel y a PDF con los botones de la parte superior.',
+        ],
+      },
+    ],
+  },
+  {
+    titulo: 'Alertas proactivas',
+    bloques: [
+      'La campana del pie del menú avisa automáticamente de situaciones que conviene revisar: distribuidores con balance de A&P negativo, sin actividad reciente (3 meses o más) o con descuadres entre categorías de datos.',
+    ],
+  },
+  {
+    titulo: 'Corrección de errores: nunca se edita, se borra y se vuelve a crear',
+    bloques: [
+      'Por diseño, esta aplicación NO permite editar un movimiento ya guardado (venta, compra, etc.). Si algo se introdujo mal, la forma de corregirlo es borrar ese movimiento (desde el histórico correspondiente) y volver a crearlo con el dato correcto. Esto es intencionado: mantiene un rastro claro de qué se cambió y cuándo.',
+    ],
+  },
+  {
+    titulo: 'Otras opciones del menú',
+    bloques: [
+      {
+        ordenada: false,
+        items: [
+          '"Modo claro/oscuro": cambia el tema visual de toda la app.',
+          'Flecha de contraer/expandir (arriba, junto al logo): reduce el menú a solo iconos, útil en pantallas con tablas anchas.',
+          '"Viendo como" (solo visible para usuarios manager): permite consultar los datos de "Mis datos", de "Todos los usuarios" (agregado) o de un usuario concreto, sin cambiar de pantalla.',
+        ],
+      },
+    ],
+  },
+];
 
 // Recibe la función 'onClose' desde App.js
 function PantallaAyuda({ onClose }) {
+
+  // Genera el mismo contenido de SECCIONES como PDF descargable, a petición
+  // de Sergio. jsPDF no entiende HTML: el texto se envuelve a mano con
+  // splitTextToSize y se va escribiendo línea a línea, controlando la
+  // posición Y y añadiendo una página nueva cuando no queda hueco.
+  const handleDescargarPdf = () => {
+    const doc = crearDocumentoPdf('Instrucciones de Uso — Sellium');
+    const margenIzq = 14;
+    const anchoUtil = 182; // A4 (210mm) menos márgenes izq/dcha
+    const altoPagina = 297;
+    const margenInferior = 15;
+    let y = 32;
+
+    const asegurarEspacio = (lineasNecesarias, alturaLinea = 5) => {
+      if (y + lineasNecesarias * alturaLinea > altoPagina - margenInferior) {
+        doc.addPage();
+        y = 20;
+      }
+    };
+
+    SECCIONES.forEach((seccion) => {
+      asegurarEspacio(3, 6);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(30, 41, 59);
+      doc.text(seccion.titulo, margenIzq, y);
+      y += 7;
+
+      seccion.bloques.forEach((bloque) => {
+        if (typeof bloque === 'string') {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(10);
+          doc.setTextColor(51, 65, 85);
+          const lineas = doc.splitTextToSize(bloque, anchoUtil);
+          asegurarEspacio(lineas.length + 1);
+          doc.text(lineas, margenIzq, y);
+          y += lineas.length * 5 + 3;
+        } else {
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(10);
+          doc.setTextColor(51, 65, 85);
+          bloque.items.forEach((item, i) => {
+            const prefijo = bloque.ordenada ? `${i + 1}. ` : '• ';
+            const lineas = doc.splitTextToSize(prefijo + item, anchoUtil - 4);
+            asegurarEspacio(lineas.length + 1);
+            doc.text(lineas, margenIzq + 4, y);
+            y += lineas.length * 5 + 1.5;
+          });
+          y += 2;
+        }
+      });
+      y += 3;
+    });
+
+    descargarPdf(doc, 'Sellium_Instrucciones_de_Uso.pdf');
+  };
+
   return (
-    // Fondo oscuro semitransparente
-    <div style={styles.modalOverlay}>
-      {/* Contenedor blanco del modal */}
-      <div style={styles.modalContent}>
-        
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-3xl max-h-[85vh] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg flex flex-col">
+
         {/* Encabezado del Modal */}
-        <div style={styles.modalHeader}>
-          <h2>📖 Instrucciones de Uso</h2>
-          <button onClick={onClose} style={styles.closeButton}>X</button>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-slate-700 shrink-0">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Instrucciones de Uso</h2>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleDescargarPdf}
+              className={`${botonSecundario} !flex !items-center !gap-1.5`}
+              title="Descargar estas instrucciones en PDF"
+            >
+              <Download size={15} /> Descargar en PDF
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="!border-0 !bg-transparent !text-slate-400 hover:!bg-slate-100 hover:!text-slate-900 dark:hover:!bg-slate-700 dark:hover:!text-white rounded-md p-1.5"
+              title="Cerrar"
+            >
+              <X size={20} />
+            </button>
+          </div>
         </div>
 
         {/* Contenido (con scroll si es muy largo) */}
-        <div style={styles.modalBody}>
-          <p>Bienvenido. Esta aplicación le permite gestionar las compras (Sell-In), ventas (Sell-Out) y el presupuesto de A&P de sus distribuidores.</p>
-
-          <h4>I. Flujo Principal (Gestión vs. Reportes)</h4>
-          <p>La aplicación tiene dos modos principales, seleccionables en el encabezado:</p>
-          <ol>
-            <li><strong>Gestión por Distribuidor:</strong> Es la pantalla principal para el trabajo diario: introducir datos, consultar el stock y el A&P de un cliente específico.</li>
-            <li><strong>Reportes Generales (Power BI):</strong> Es una pantalla dedicada a exportar datos brutos (totales por rango de fechas) para su análisis en Power BI.</li>
-          </ol>
-
-          <h4>II. Gestión por Distribuidor (Pantalla Principal)</h4>
-          <p>Esta es la pantalla donde pasará la mayor parte del tiempo.</p>
-          <ul>
-            <li><strong>Selector Principal:</strong> Use el desplegable "Gestionando al Distribuidor" para elegir el cliente sobre el que quiere trabajar. Todas las pestañas de abajo (`Stock`, `Control A&P`, etc.) se actualizarán automáticamente para mostrar solo los datos de ese distribuidor.</li>
-            <li><strong>Añadir un Distribuidor Nuevo:</strong> Si un distribuidor no está en la lista, haga clic en el botón <strong>`[+ Añadir Distribuidor]`</strong>, escriba el nombre y guárdelo. Aparecerá en el selector.</li>
-          </ul>
-
-          <h4>III. Pestañas de Captura (Ventas y Compras)</h4>
-          <p>Estas son las pestañas para <strong>introducir datos nuevos</strong>:</p>
-          <ul>
-            <li><strong>Pestaña "Ventas y A&P" (Sell-Out):</strong>
-                <ol>
-                    <li>Seleccione el <strong>Mes/Año</strong> del movimiento.</li>
-                    <li>Seleccione la <strong>Marca</strong> en el desplegable.</li>
-                    <li>Rellene los campos: `VENTAS (uds)`, `A&P MUESTRAS (uds)`, `A&P REGALADAS (uds)` o `APORTACIÓN A&P (€)`.</li>
-                    <li>El campo `VENTAS (€)` se calcula automáticamente.</li>
-                    <li>Haga clic en <strong>"GUARDAR MOVIMIENTO"</strong>.</li>
-                </ol>
-            </li>
-            <li style={{marginTop: '10px'}}><strong>Pestaña "Compras" (Sell-In):</strong>
-                <ol>
-                    <li>Seleccione el <strong>Mes/Año</strong> de la compra.</li>
-                    <li>Seleccione la <strong>Marca</strong>.</li>
-                    <li>Rellene `UNIDADES COMPRADAS`.</li>
-                    <li>El campo `FACTURACIÓN (€)` se calcula automáticamente.</li>
-                    <li>Haga clic en <strong>"GUARDAR COMPRA"</strong>.</li>
-                </ol>
-            </li>
-            <li style={{marginTop: '10px'}}><strong>Añadir una Marca Nueva:</strong> Si una marca no existe, haga clic en el botón <strong>`[+ Añadir]`</strong> al lado del desplegable de marcas. Rellene el Nombre, el Precio (`Coste_Unidad`) y el A&P (`AP_Generado_Por_Unidad`).</li>
-          </ul>
-
-          <h4>IV. Pestañas de Análisis (Refresco Automático)</h4>
-          <p>Estas pestañas <strong>se actualizan solas</strong> cada vez que usted guarda o borra un movimiento.</p>
-          <ul>
-            <li><strong>Pestaña "Stock":</strong> Muestra el inventario teórico. `Stock Final = (Stock Inicial) + (Compras Año) - (Salidas Año)`. Las "Salidas" incluyen Ventas, Regaladas y Muestras.</li>
-            <li><strong>Pestaña "Control A&P":</strong> Muestra el balance financiero del A&P. `A&P Generado` (de Compras) vs. `A&P Gastado` (de Salidas).</li>
-          </ul>
-
-          <h4>V. Pestañas de Histórico (Sell-In y Sell-Out)</h4>
-          <p>Estas pestañas muestran el "libro de contabilidad" de todos los movimientos.</p>
-          <ul>
-            <li><strong>Filtros:</strong> Puede filtrar por rango de fechas y por marca.</li>
-            <li><strong>Exportar:</strong> El botón verde "Exportar a Excel" exporta *solo* los datos que está viendo (ya filtrados).</li>
-            <li><strong>Borrar:</strong> Puede borrar un registro erróneo usando el botón rojo "Borrar".</li>
-          </ul>
-
-          <h4>VI. Reportes Generales (Power BI)</h4>
-          <p>Esta pantalla es <strong>solo</strong> para exportar datos brutos para análisis externo.</p>
-          <ol>
-            <li>Seleccione un rango de fechas ("Desde" y "Hasta").</li>
-            <li>Haga clic en <strong>"Exportar Compras (Sell-In)"</strong>.</li>
-            <li>Haga clic en <strong>"Exportar Ventas y Gastos (Sell-Out)"</strong>.</li>
-          </ol>
-          
-          <h4>VII. Mantenimiento</h4>
-          <p><strong>¡ADVERTENCIA!</strong> Use esta pestaña solo para borrar datos de prueba. Borrará <strong>TODO</strong> su historial de `Ventas` y `Compras`. **NO** borrará sus `Distribuidores` ni las `Marcas`.</p>
+        <div className="px-6 py-4 overflow-y-auto space-y-5">
+          {SECCIONES.map((seccion) => (
+            <div key={seccion.titulo}>
+              <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-1.5">{seccion.titulo}</h4>
+              <div className="space-y-2">
+                {seccion.bloques.map((bloque, i) =>
+                  typeof bloque === 'string' ? (
+                    <p key={i} className="text-sm text-slate-600 dark:text-slate-300">{bloque}</p>
+                  ) : bloque.ordenada ? (
+                    <ol key={i} className="list-decimal list-inside text-sm text-slate-600 dark:text-slate-300 space-y-1">
+                      {bloque.items.map((item, j) => <li key={j}>{item}</li>)}
+                    </ol>
+                  ) : (
+                    <ul key={i} className="list-disc list-inside text-sm text-slate-600 dark:text-slate-300 space-y-1">
+                      {bloque.items.map((item, j) => <li key={j}>{item}</li>)}
+                    </ul>
+                  )
+                )}
+              </div>
+            </div>
+          ))}
         </div>
-
       </div>
     </div>
   );
 }
-
-// Estilos para el Modal
-const styles = {
-  modalOverlay: {
-    position: 'fixed', // Se superpone a todo
-    top: 0,
-    left: 0,
-    width: '100vw',
-    height: '100vh',
-    backgroundColor: 'rgba(0, 0, 0, 0.7)', // Fondo oscuro
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000, // Por encima de todo lo demás
-  },
-  modalContent: {
-    backgroundColor: '#ffffff',
-    color: '#333', // Texto oscuro
-    padding: '20px',
-    borderRadius: '8px',
-    width: '80%',
-    maxWidth: '800px',
-    height: '80vh', // 80% de la altura de la pantalla
-    boxShadow: '0 5px 15px rgba(0,0,0,0.3)',
-    display: 'flex',
-    flexDirection: 'column',
-  },
-  modalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottom: '1px solid #eee',
-    paddingBottom: '10px',
-  },
-  closeButton: {
-    background: 'transparent',
-    border: 'none',
-    fontSize: '24px',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-    color: '#888',
-  },
-  modalBody: {
-    flex: 1, // Ocupa el espacio restante
-    overflowY: 'auto', // ¡Añade scroll si el texto es muy largo!
-    paddingTop: '10px',
-  }
-};
 
 export default PantallaAyuda;

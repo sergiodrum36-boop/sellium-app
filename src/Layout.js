@@ -461,9 +461,9 @@ function Layout({
               igual que el resto de textos de este pie (email, "Viendo
               como"...). */}
           {!colapsadoVisual && (
-            <div className="pt-3 mt-2 border-t border-slate-200 dark:border-white/10 flex flex-col items-center gap-1.5">
-              <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">Powered by</span>
-              <img src={logoSellium} alt="Sellium" className="h-7 w-auto" />
+            <div className="pt-3 mt-2 border-t border-slate-200 dark:border-white/10">
+              <span className="block text-center text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-1.5">Powered by</span>
+              <img src={logoSellium} alt="Sellium" className="w-full h-auto rounded-md" />
             </div>
           )}
         </div>
