@@ -123,14 +123,21 @@ function PantallaVentasReales({ idUsuario, vistaActiva, onNavigate }) {
       {cargando ? (
         <div className="text-slate-500 dark:text-slate-400">Cargando datos...</div>
       ) : (
-        <div className={tarjeta}>
+        <>
+          {/* El Dashboard ya NO va dentro de la tarjeta blanca/slate-800: a
+              petición de Sergio, tiene que verse igual que el Dashboard de
+              Gestión (PantallaDashboardAPCompania.js), que es un <div> suelto
+              y por tanto deja ver el fondo azul marino oscuro de la propia
+              página (bg-slate-950 de Layout.js) en vez del gris/slate-800 de
+              la tarjeta. Importar y Tipología SÍ mantienen su tarjeta, igual
+              que el resto de pantallas de mantenimiento de la app. */}
           {visitadas.has(PESTAÑA_VENTAS_REALES_DASHBOARD) && (
             <div style={estiloVista(PESTAÑA_VENTAS_REALES_DASHBOARD)}>
               <DashboardVentasReales ventasReales={ventasReales} tipologiasMarca={tipologiasMarca} marcasGlobales={marcasGlobales} />
             </div>
           )}
           {visitadas.has(PESTAÑA_VENTAS_REALES_IMPORTAR) && (
-            <div style={estiloVista(PESTAÑA_VENTAS_REALES_IMPORTAR)}>
+            <div className={tarjeta} style={estiloVista(PESTAÑA_VENTAS_REALES_IMPORTAR)}>
               <ImportarVentasReales
                 idUsuario={idUsuario}
                 listaDistribuidores={listaDistribuidores}
@@ -141,7 +148,7 @@ function PantallaVentasReales({ idUsuario, vistaActiva, onNavigate }) {
             </div>
           )}
           {visitadas.has(PESTAÑA_VENTAS_REALES_TIPOLOGIA) && (
-            <div style={estiloVista(PESTAÑA_VENTAS_REALES_TIPOLOGIA)}>
+            <div className={tarjeta} style={estiloVista(PESTAÑA_VENTAS_REALES_TIPOLOGIA)}>
               <TipologiaReferencias
                 marcas={marcasGlobales}
                 tipologiasMarca={tipologiasMarca}
@@ -150,7 +157,7 @@ function PantallaVentasReales({ idUsuario, vistaActiva, onNavigate }) {
               />
             </div>
           )}
-        </div>
+        </>
       )}
     </div>
   );
