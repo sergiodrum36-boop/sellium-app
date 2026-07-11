@@ -152,6 +152,12 @@ import {
   Wrench, ClipboardList, Tags, Trash2, ScrollText, Target, Menu, X, TrendingDown
 } from 'lucide-react';
 import logo from './assets/logo.png';
+// Logo de la app (Sellium), a petición de Sergio: se añade junto al logo de
+// la empresa (UNESDI) SIN quitar este último. Solo en la cabecera expandida
+// (desktop y móvil) — en el modo colapsado del sidebar (w-16, muy estrecho)
+// se sigue mostrando solo el de la empresa para no amontonar dos logos en
+// tan poco espacio.
+import logoSellium from './assets/logo-sellium.png';
 import Sidebar from './Sidebar';
 import {
   PESTAÑA_VENTAS_AP, PESTAÑA_COMPRAS, PESTAÑA_STOCK,
@@ -329,7 +335,13 @@ function Layout({
         }
       >
         <div className={`flex items-center gap-2 px-5 py-4 border-b border-slate-200 dark:border-white/10 ${colapsadoVisual ? 'md:flex-col md:px-2' : 'justify-between'}`}>
-          {!colapsadoVisual && <img src={logo} alt="Logo de la empresa" className="h-8 w-auto md:h-8" />}
+          {!colapsadoVisual && (
+            <div className="flex items-center gap-3 min-w-0">
+              <img src={logo} alt="Logo de la empresa" className="h-8 w-auto md:h-8 shrink-0" />
+              <div className="w-px h-6 bg-slate-200 dark:bg-white/10 shrink-0" />
+              <img src={logoSellium} alt="Sellium" className="h-6 w-auto md:h-6 shrink-0" />
+            </div>
+          )}
           {colapsadoVisual && <img src={logo} alt="Logo de la empresa" className="h-8 w-auto md:h-7" />}
 
           {/* Contraer/Expandir menú: solo tiene sentido en desktop, donde el
@@ -461,7 +473,9 @@ function Layout({
           >
             <Menu size={22} />
           </button>
-          <img src={logo} alt="Logo de la empresa" className="h-7 w-auto" />
+          <img src={logo} alt="Logo de la empresa" className="h-7 w-auto shrink-0" />
+          <div className="w-px h-5 bg-slate-200 dark:bg-white/10 shrink-0" />
+          <img src={logoSellium} alt="Sellium" className="h-5 w-auto shrink-0" />
         </div>
 
         <main className="flex-1 p-3 sm:p-5">
