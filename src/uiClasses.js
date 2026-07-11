@@ -36,7 +36,12 @@ export const trTotales = 'bg-slate-50 dark:bg-slate-900 font-semibold';
 
 export const kpiCard = 'flex-1 min-w-[200px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4';
 export const kpiTitulo = 'text-xs font-semibold text-slate-500 dark:text-slate-400 tracking-wide mb-1';
-export const kpiValor = 'text-xl font-semibold';
+// Color base explícito (antes no lo tenía y, sin un colorPorSigno/override
+// detrás, el valor heredaba un gris casi invisible en modo oscuro — bug
+// detectado en Recuperación de Ventas, KPI "Importe a recuperar"). Los
+// usos que añaden colorPorSigno(...) con prefijo "!" lo siguen pisando sin
+// problema.
+export const kpiValor = 'text-xl font-semibold text-slate-900 dark:text-white';
 
 // Color según el signo del valor: rojo si es negativo, verde si es positivo,
 // sin color especial si es exactamente 0. Centralizada aquí (rediseño

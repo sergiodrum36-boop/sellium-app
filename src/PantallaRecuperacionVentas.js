@@ -13,6 +13,10 @@
  *    un mes flojo puede ser normal todos los años, no solo una caída real).
  *  - Datos: solo Facturación (cajas + importe de `ventasReales`), no A&P.
  *  - Formato: pantalla en la app + exportable a Excel y PDF.
+ *  - Selección "Desde"/"Hasta": permite analizar un único mes (el caso por
+ *    defecto, Desde = Hasta) o juntar varios meses seguidos en una sola
+ *    comparativa (p.ej. Enero-Marzo), comparando siempre contra el mismo
+ *    rango de meses un año antes.
  *
  * Semáforo por distribuidor (sobre el TOTAL de todas sus marcas ese mes):
  *  - "Sin histórico": el distribuidor facturó menos de IMPORTE_MINIMO_ANALISIS
@@ -81,7 +85,11 @@ const calcularMesAnioAnterior = (mesAno) => {
 function PantallaRecuperacionVentas({ idUsuario }) {
   const [ventasReales, setVentasReales] = useState([]);
   const [cargando, setCargando] = useState(true);
-  const [mesSeleccionado, setMesSeleccionado] = useState('');
+  // "Desde"/"Hasta" permiten analizar un solo mes (Desde = Hasta, el caso
+  // por defecto) o varios meses seguidos juntos (p.ej. Enero-Marzo), a
+  // petición de Sergio, para comparativas trimestrales/semestrales.
+  const [mesDesde, setMesDesde] = useState('');
+  const [mesHasta, setMesHasta] = useState('');
   const [idDistribuidorSeleccionado, setIdDistribuidorSeleccionado] = useState('');
 
   useEffect(() => {
@@ -106,21 +114,53 @@ function PantallaRecuperacionVentas({ idUsuario }) {
   }, [ventasReales]);
 
   useEffect(() => {
-    if (mesesDisponibles.length > 0 && !mesesDisponibles.includes(mesSeleccionado)) {
-      setMesSeleccionado(mesesDisponibles[0]);
+    if (mesesDisponibles.length > 0) {
+      if (!mesesDisponibles.includes(mesDesde)) setMesDesde(mesesDisponibles[0]);
+      if (!mesesDisponibles.includes(mesHasta)) setMesHasta(mesesDisponibles[0]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mesesDisponibles]);
 
-  const mesAnterior = mesSeleccionado ? calcularMesAnioAnterior(mesSeleccionado) : '';
+  // "Desde" y "Hasta" pueden llegar en cualquier orden (el usuario puede
+  // tocar primero el que quiera) — se ordenan aquí para tener siempre un
+  // rango cronológico válido.
+  const mesDesdeOrdenado = mesDesde && mesHasta ? (mesDesde <= mesHasta ? mesDesde : mesHasta) : '';
+  const mesHastaOrdenado = mesDesde && mesHasta ? (mesDesde <= mesHasta ? mesHasta : mesDesde) : '';
 
-  // Agrega ventasReales de un mes concreto por Distribuidor+Marca (cajas+importe).
+  // Todos los meses con datos dentro del rango elegido (ambos extremos
+  // incluidos) y esos mismos meses un año antes — aunque algún mes concreto
+  // del año pasado no tenga datos, simplemente suma 0 y no rompe nada.
+  const mesesEnRango = useMemo(() => {
+    if (!mesDesdeOrdenado || !mesHastaOrdenado) return [];
+    return mesesDisponibles.filter(m => m >= mesDesdeOrdenado && m <= mesHastaOrdenado);
+  }, [mesesDisponibles, mesDesdeOrdenado, mesHastaOrdenado]);
+
+  const mesesAnterioresEnRango = useMemo(
+    () => mesesEnRango.map(calcularMesAnioAnterior),
+    [mesesEnRango]
+  );
+
+  // Etiquetas legibles del período elegido y de su equivalente el año
+  // pasado — se usan en la pantalla, el Excel y el PDF.
+  const rangoActualLabel = !mesDesdeOrdenado
+    ? '—'
+    : (mesDesdeOrdenado === mesHastaOrdenado
+        ? formatearMes(mesHastaOrdenado)
+        : `${formatearMes(mesDesdeOrdenado)} – ${formatearMes(mesHastaOrdenado)}`);
+  const rangoAnteriorLabel = !mesDesdeOrdenado
+    ? '—'
+    : (mesDesdeOrdenado === mesHastaOrdenado
+        ? formatearMes(calcularMesAnioAnterior(mesHastaOrdenado))
+        : `${formatearMes(calcularMesAnioAnterior(mesDesdeOrdenado))} – ${formatearMes(calcularMesAnioAnterior(mesHastaOrdenado))}`);
+
+  // Agrega ventasReales de un conjunto de meses por Distribuidor+Marca (cajas+importe).
   const agregados = useMemo(() => {
-    const construir = (mesAno) => {
+    const construir = (listaMeses) => {
       const mapa = new Map();
-      if (!mesAno) return mapa;
+      if (!listaMeses || listaMeses.length === 0) return mapa;
+      const setMeses = new Set(listaMeses);
       ventasReales.forEach(v => {
-        if (v.mes_ano !== mesAno) return;
+        if (!setMeses.has(v.mes_ano)) return;
         const key = `${v.id_distribuidor}|${v.id_marca}`;
         const fila = mapa.get(key) || {
           id_distribuidor: v.id_distribuidor,
@@ -136,8 +176,8 @@ function PantallaRecuperacionVentas({ idUsuario }) {
       });
       return mapa;
     };
-    return { actual: construir(mesSeleccionado), anterior: construir(mesAnterior) };
-  }, [ventasReales, mesSeleccionado, mesAnterior]);
+    return { actual: construir(mesesEnRango), anterior: construir(mesesAnterioresEnRango) };
+  }, [ventasReales, mesesEnRango, mesesAnterioresEnRango]);
 
   // Por distribuidor: todas sus marcas (mes actual ∪ mismo mes año pasado),
   // con "cajas/importe que faltan" y el semáforo del total del distribuidor.
@@ -211,6 +251,11 @@ function PantallaRecuperacionVentas({ idUsuario }) {
     return { nRojo, nAmarillo, importeRecuperable };
   }, [distribuidores]);
 
+  // Etiqueta segura para nombres de archivo (sin espacios ni acentos raros).
+  const nombreArchivoPeriodo = mesDesdeOrdenado
+    ? (mesDesdeOrdenado === mesHastaOrdenado ? mesHastaOrdenado : `${mesDesdeOrdenado}_a_${mesHastaOrdenado}`)
+    : 'sin_periodo';
+
   const handleExportarExcel = () => {
     const datos = [];
     distribuidores.forEach(d => {
@@ -218,11 +263,11 @@ function PantallaRecuperacionVentas({ idUsuario }) {
         datos.push({
           'Distribuidor': d.nombre_distribuidor,
           'Marca': m.nombre_marca,
-          [`Cajas ${formatearMes(mesAnterior)}`]: Math.round(m.cajasAnterior || 0),
-          [`Cajas ${formatearMes(mesSeleccionado)}`]: Math.round(m.cajasActual || 0),
+          [`Cajas ${rangoAnteriorLabel}`]: Math.round(m.cajasAnterior || 0),
+          [`Cajas ${rangoActualLabel}`]: Math.round(m.cajasActual || 0),
           'Cajas que faltan': Math.round(m.cajasPerdidas),
-          [`Importe ${formatearMes(mesAnterior)}`]: Math.round((m.importeAnterior || 0) * 100) / 100,
-          [`Importe ${formatearMes(mesSeleccionado)}`]: Math.round((m.importeActual || 0) * 100) / 100,
+          [`Importe ${rangoAnteriorLabel}`]: Math.round((m.importeAnterior || 0) * 100) / 100,
+          [`Importe ${rangoActualLabel}`]: Math.round((m.importeActual || 0) * 100) / 100,
           'Importe que falta': Math.round(m.importePerdido * 100) / 100
         });
       });
@@ -230,15 +275,15 @@ function PantallaRecuperacionVentas({ idUsuario }) {
     const worksheet = XLSX.utils.json_to_sheet(datos);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Recuperacion Ventas');
-    XLSX.writeFile(workbook, `Recuperacion_Ventas_${mesSeleccionado || 'sin_mes'}.xlsx`);
+    XLSX.writeFile(workbook, `Recuperacion_Ventas_${nombreArchivoPeriodo}.xlsx`);
   };
 
   const handleExportarPdf = () => {
     const doc = crearDocumentoPdf(
       'Recuperación de Ventas',
-      `Mes analizado: ${formatearMes(mesSeleccionado)} · comparado con ${formatearMes(mesAnterior)}`
+      `Período analizado: ${rangoActualLabel} · comparado con ${rangoAnteriorLabel}`
     );
-    const head = [['Distribuidor', `Importe ${formatearMes(mesAnterior)}`, `Importe ${formatearMes(mesSeleccionado)}`, 'Variación', 'Estado']];
+    const head = [['Distribuidor', `Importe ${rangoAnteriorLabel}`, `Importe ${rangoActualLabel}`, 'Variación', 'Estado']];
     const body = distribuidores.map(d => [
       d.nombre_distribuidor,
       formateadorMoneda.format(d.importeAnteriorTotal),
@@ -254,7 +299,7 @@ function PantallaRecuperacionVentas({ idUsuario }) {
       headStyles: { fillColor: [71, 85, 105], fontSize: 9 },
       styles: { fontSize: 8, cellPadding: 2 }
     });
-    descargarPdf(doc, `Recuperacion_Ventas_${mesSeleccionado || 'sin_mes'}.pdf`);
+    descargarPdf(doc, `Recuperacion_Ventas_${nombreArchivoPeriodo}.pdf`);
   };
 
   if (cargando) {
@@ -275,18 +320,28 @@ function PantallaRecuperacionVentas({ idUsuario }) {
       ) : (
         <>
           <div className={filtroContenedor}>
-            <label className={etiqueta}>Mes a analizar:</label>
+            <label className={etiqueta}>Desde:</label>
             <select
-              value={mesSeleccionado}
-              onChange={(e) => setMesSeleccionado(e.target.value)}
-              className={`${inputClasses} min-w-[180px]`}
+              value={mesDesde}
+              onChange={(e) => setMesDesde(e.target.value)}
+              className={`${inputClasses} min-w-[160px]`}
+            >
+              {mesesDisponibles.map(m => (
+                <option key={m} value={m}>{formatearMes(m)}</option>
+              ))}
+            </select>
+            <label className={etiqueta}>Hasta:</label>
+            <select
+              value={mesHasta}
+              onChange={(e) => setMesHasta(e.target.value)}
+              className={`${inputClasses} min-w-[160px]`}
             >
               {mesesDisponibles.map(m => (
                 <option key={m} value={m}>{formatearMes(m)}</option>
               ))}
             </select>
             <span className="text-xs text-slate-500 dark:text-slate-400">
-              Comparando con {formatearMes(mesAnterior)}
+              Comparando con {rangoAnteriorLabel}
             </span>
             <div className="flex gap-2 ml-auto">
               <button type="button" onClick={handleExportarExcel} className={botonSecundario}>Exportar a Excel</button>
@@ -319,8 +374,8 @@ function PantallaRecuperacionVentas({ idUsuario }) {
                   <tr>
                     <th className={thClasses}>Distribuidor</th>
                     <th className={thClasses}>Estado</th>
-                    <th className={thClasses}>Importe {formatearMes(mesAnterior)}</th>
-                    <th className={thClasses}>Importe {formatearMes(mesSeleccionado)}</th>
+                    <th className={thClasses}>Importe {rangoAnteriorLabel}</th>
+                    <th className={thClasses}>Importe {rangoActualLabel}</th>
                     <th className={thClasses}>Variación</th>
                     <th className={thClasses}>Importe a recuperar</th>
                   </tr>
@@ -354,15 +409,15 @@ function PantallaRecuperacionVentas({ idUsuario }) {
           {distribuidorSeleccionado && (
             <div className={`${tarjeta} mt-5`}>
               <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
-                {distribuidorSeleccionado.nombre_distribuidor} — qué venderle este mes para recuperar {formatearMes(mesAnterior)}
+                {distribuidorSeleccionado.nombre_distribuidor} — qué venderle para recuperar {rangoAnteriorLabel}
               </h4>
               <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
                 <table className="w-full border-collapse text-sm">
                   <thead>
                     <tr>
                       <th className={thClasses}>Marca</th>
-                      <th className={thClasses}>Cajas {formatearMes(mesAnterior)}</th>
-                      <th className={thClasses}>Cajas {formatearMes(mesSeleccionado)}</th>
+                      <th className={thClasses}>Cajas {rangoAnteriorLabel}</th>
+                      <th className={thClasses}>Cajas {rangoActualLabel}</th>
                       <th className={thClasses}>Cajas que faltan</th>
                       <th className={thClasses}>Importe que falta</th>
                     </tr>
