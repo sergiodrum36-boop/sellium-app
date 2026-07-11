@@ -6,29 +6,18 @@ echo ============================================
 echo Subiendo los ultimos cambios a GitHub...
 echo ============================================
 git add -A
-git commit -m "Actualizacion %date% %time%"
-if errorlevel 1 (
-  echo ============================================
-  echo No habia cambios nuevos que subir.
-  echo ============================================
-  pause
-  exit /b 0
-)
-
+git commit -m "Actualizacion automatica"
 git push
-if errorlevel 1 (
-  echo ============================================
-  echo ERROR: el push ha fallado. Revisa el mensaje
-  echo de arriba.
-  echo ============================================
-  pause
-  exit /b 1
-)
 
 echo ============================================
-echo LISTO. Cambios subidos a GitHub. Ahora GitHub
-echo compilara y publicara la app sola (1-2 min).
-echo Puedes ver el progreso en:
-echo https://github.com/sergiodrum36-boop/sellium-app/actions
+echo FIN. Revisa el texto de arriba:
+echo - Si pone "nothing to commit" es que no habia
+echo   cambios nuevos (normal, no es un error).
+echo - Si ves algun "error" o "fatal", copiamelo.
+echo - Si ha ido bien, GitHub compilara y publicara
+echo   la app sola en 1-2 minutos. Progreso en:
+echo   https://github.com/sergiodrum36-boop/sellium-app/actions
 echo ============================================
-pause
+echo.
+echo Pulsa una tecla para cerrar esta ventana...
+pause >nul

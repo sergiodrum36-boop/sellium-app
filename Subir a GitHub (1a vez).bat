@@ -14,12 +14,6 @@ echo Preparando los archivos para subir...
 echo ============================================
 git add -A
 git commit -m "Subida inicial a GitHub"
-if errorlevel 1 (
-  echo ============================================
-  echo Aviso: no habia cambios nuevos que preparar
-  echo (puede ser normal). Continuando...
-  echo ============================================
-)
 
 echo ============================================
 echo Subiendo todo a GitHub...
@@ -29,25 +23,21 @@ echo (sergiodrum36-boop). Inicia sesion si te lo pide.
 echo ============================================
 git branch -M main
 git push -u origin main
-if errorlevel 1 (
-  echo ============================================
-  echo ERROR: el push ha fallado. Revisa el mensaje
-  echo de arriba - lo mas normal es que falte iniciar
-  echo sesion con GitHub en la ventana que se abre.
-  echo ============================================
-  pause
-  exit /b 1
-)
 
 echo ============================================
-echo LISTO. El codigo ya esta en GitHub:
-echo https://github.com/sergiodrum36-boop/sellium-app
+echo FIN. Revisa el texto de arriba:
+echo - Si ves "Branch 'main' set up to track..." o
+echo   similar, ha ido bien.
+echo - Si ves algun "error" o "fatal", copiamelo.
+echo.
+echo Repositorio: https://github.com/sergiodrum36-boop/sellium-app
 echo.
 echo SIGUIENTE PASO (si aun no lo has hecho): entra en
-echo ese repositorio - Settings - Secrets and variables
-echo - Actions - New repository secret - crea uno llamado
-echo FIREBASE_TOKEN con el token que te dio el comando
-echo "firebase login:ci". Sin ese secreto, GitHub no
-echo podra publicar la app automaticamente.
+echo ese repositorio, pestaña Settings, luego Secrets
+echo and variables - Actions - New repository secret,
+echo crea uno llamado FIREBASE_TOKEN con el token que
+echo te dio el comando "firebase login:ci".
 echo ============================================
-pause
+echo.
+echo Pulsa una tecla para cerrar esta ventana...
+pause >nul
