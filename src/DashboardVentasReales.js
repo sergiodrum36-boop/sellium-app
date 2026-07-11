@@ -790,6 +790,23 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
           />
         </div>
 
+        {/* Selector de Tipología, a petición de Sergio: faltaba en la barra de
+            filtros aunque ya existía como filtro (filtros.tipologias) porque
+            se podía activar haciendo clic en el donut "Peso por Tipología" —
+            este desplegable reutiliza exactamente el mismo estado/filtro, no
+            es lógica nueva. Las opciones son las categorías fijas
+            (TIPOLOGIAS_PRODUCTO), igual que en el donut. */}
+        <div className="flex items-center gap-2">
+          <label className={etiqueta}>Tipología:</label>
+          <MultiSelectDropdown
+            opciones={TIPOLOGIAS_PRODUCTO.map(t => ({ value: t, label: t }))}
+            seleccionados={filtros.tipologias}
+            onChange={(nuevos) => setFiltros(prev => ({ ...prev, tipologias: nuevos }))}
+            placeholder="-- Todas --"
+            anchoClase="min-w-[160px]"
+          />
+        </div>
+
         <button className={`${botonSecundario} ml-auto`} onClick={handleLimpiarFiltros}>Limpiar</button>
       </div>
 
