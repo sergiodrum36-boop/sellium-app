@@ -77,6 +77,13 @@
  * modo Todos los usuarios" que Gestión: su pestaña "Objetivo Anual" es de
  * EDICIÓN (fijar un objetivo requiere una cuenta y un distribuidor
  * concretos), no de análisis.
+ *
+ * CAMBIO (Recuperación de Ventas, a petición de Sergio): nueva sección de
+ * nivel superior PantallaRecuperacionVentas (ver Layout.js/
+ * PantallaRecuperacionVentas.js) — informe mensual por distribuidor/marca
+ * frente al mismo mes del año anterior, para detectar caídas de compra. Es
+ * de ANÁLISIS (como Dashboard/Reportes), así que recibe idUsuarioEfectivo
+ * directamente y sí funciona en modo "Todos los usuarios".
  */
 
 import React, { useState, useEffect } from 'react';
@@ -92,6 +99,7 @@ import PantallaDashboard from './PantallaDashboard';
 import PantallaDashboardAPCompania, { PANTALLA_DASHBOARD_AP_COMPANIA } from './PantallaDashboardAPCompania';
 import PantallaVentasReales, { PESTAÑAS_VENTAS_REALES } from './PantallaVentasReales';
 import PantallaPresupuesto, { PANTALLA_PRESUPUESTO } from './PantallaPresupuesto';
+import PantallaRecuperacionVentas, { PANTALLA_RECUPERACION_VENTAS } from './PantallaRecuperacionVentas';
 // ¡NO importamos SplashScreen aquí, usamos la de Login!
 // ¡NO importamos getUserRole!
 
@@ -358,6 +366,13 @@ function App() {
                 idUsuario={enModoTodosLosUsuarios ? null : idUsuarioEfectivo}
                 bloqueadoPorTodos={enModoTodosLosUsuarios}
               />
+            </ErrorBoundary>
+          </div>
+        )}
+        {gruposVisitados.has(PANTALLA_RECUPERACION_VENTAS) && (
+          <div style={estiloGrupo(pantallaActiva === PANTALLA_RECUPERACION_VENTAS)}>
+            <ErrorBoundary label="Recuperación de Ventas">
+              <PantallaRecuperacionVentas idUsuario={idUsuarioEfectivo} />
             </ErrorBoundary>
           </div>
         )}

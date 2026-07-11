@@ -149,7 +149,7 @@ import {
   LayoutDashboard, Users, BarChart3, HelpCircle, LogOut, Sun, Moon,
   ChevronsLeft, ChevronsRight, FileSpreadsheet, FileText, ShoppingCart,
   Package, ShieldCheck, History, Upload, GitMerge, CalendarClock,
-  Wrench, ClipboardList, Tags, Trash2, ScrollText, Target, Menu, X
+  Wrench, ClipboardList, Tags, Trash2, ScrollText, Target, Menu, X, TrendingDown
 } from 'lucide-react';
 import logo from './assets/logo.png';
 import Sidebar from './Sidebar';
@@ -166,6 +166,7 @@ import {
 } from './PantallaVentasReales';
 import { PANTALLA_DASHBOARD_AP_COMPANIA } from './PantallaDashboardAPCompania';
 import { PANTALLA_PRESUPUESTO } from './PantallaPresupuesto';
+import { PANTALLA_RECUPERACION_VENTAS } from './PantallaRecuperacionVentas';
 import { TODOS_LOS_USUARIOS } from './firebaseApi';
 import AlertasBell from './AlertasBell';
 
@@ -241,6 +242,11 @@ const TOP_ITEMS = [
   // nivel superior, a petición explícita de Sergio — ver cabecera del
   // archivo y PantallaPresupuesto.js.
   { id: PANTALLA_PRESUPUESTO, label: 'Presupuesto y Forecast', icon: Target },
+  // Recuperación de Ventas (comparativa mensual por distribuidor/marca vs
+  // el mismo mes del año anterior, a petición de Sergio) — pantalla de
+  // ANÁLISIS de uso recurrente (se consulta cada mes), por eso a nivel
+  // superior y no dentro de "Gestión". Ver PantallaRecuperacionVentas.js.
+  { id: PANTALLA_RECUPERACION_VENTAS, label: 'Recuperación de Ventas', icon: TrendingDown },
 ];
 
 function navButtonClasses(activo, colapsado) {
