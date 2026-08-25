@@ -39,6 +39,24 @@
  * marcados que descartados enseña los "excluidos" (con opción de
  * reincluirlos), y si hay menos marcados que el total enseña los
  * "incluidos" (con opción de quitarlos).
+ *
+ * `vacioSignificaTodos` (2026-08-25, a petición de Sergio: "tiene que estar
+ * la opción de poder escoger a uno, varios o todos los distribuidores" en
+ * Sell-Out por Cliente Final y por Marca): true por defecto, mantiene TODO
+ * el comportamiento de arriba (Zona/Preventista/Cliente, donde no elegir
+ * nada de forma explícita significa "sin filtro, se ve todo"). El nuevo
+ * selector de Distribuidor de esas dos pantallas lo pasa a `false`, porque
+ * ahí `values = []` tiene que significar "todavía no se ha elegido ningún
+ * distribuidor" (pantalla vacía con el mensaje de "elige un distribuidor"),
+ * NO "cargar los datos de TODOS los distribuidores" — sería una carga
+ * pesada e inesperada nada más entrar en la pantalla. Con `false`:
+ *   - Marcar/desmarcar una opción es un toggle simple sobre `values`, sin el
+ *     modo implícito "todos menos este".
+ *   - "Marcar todos" pone en `values` la lista EXPLÍCITA de todos los ids
+ *     (nunca `[]`) — así se distingue "todavía nada elegido" de "elegidos
+ *     todos a propósito".
+ *   - El botón muestra el placeholder cuando `values` está vacío, y
+ *     "Todos (N)" cuando `values` incluye justo todas las opciones.
  */
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { X, ChevronDown } from 'lucide-react';
@@ -47,12 +65,14 @@ import { etiqueta, inputClasses } from './uiClasses';
 const LIMITE_RESULTADOS = 200;
 const LIMITE_CHIPS = 20;
 
-function FiltroMultiSelect({ label, values, onChange, opciones, getValue = (o) => o.id, getLabel = (o) => o.nombre, placeholder = 'Todos', className = '' }) {
+function FiltroMultiSelect({ label, values, onChange, opciones, getValue = (o) => o.id, getLabel = (o) => o.nombre, placeholder = 'Todos', className = '', vacioSignificaTodos = true }) {
   const [abierto, setAbierto] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   // true = se partió de "Deseleccionar todo" y hay que ir marcando uno a
   // uno; false (por defecto) = se parte de "todos marcados" y desmarcar
-  // excluye. Ver comentario de cabecera.
+  // excluye. Ver comentario de cabecera. Solo tiene sentido cuando
+  // `vacioSignificaTodos` es true — en el otro modo `values` ya distingue
+  // sin ambigüedad "nada elegido" de "todo elegido a propósito".
   const [modoVacio, setModoVacio] = useState(false);
   const ref = useRef(null);
 
@@ -76,12 +96,18 @@ function FiltroMultiSelect({ label, values, onChange, opciones, getValue = (o) =
   }, [busqueda, opciones]);
 
   // Sin filtro activo (values vacío): en modo "todos" se ve todo marcado;
-  // en modo "ninguno" (tras Deseleccionar todo) se ve todo vacío.
-  const estaElegido = (o) => (values.length === 0 ? !modoVacio : values.includes(getValue(o)));
+  // en modo "ninguno" (tras Deseleccionar todo) se ve todo vacío. Con
+  // `vacioSignificaTodos = false`, `values` ya es la verdad explícita —
+  // vacío es vacío, sin modo implícito.
+  const estaElegido = (o) => (
+    vacioSignificaTodos
+      ? (values.length === 0 ? !modoVacio : values.includes(getValue(o)))
+      : values.includes(getValue(o))
+  );
 
   const toggle = (o) => {
     const v = getValue(o);
-    if (values.length === 0 && !modoVacio) {
+    if (vacioSignificaTodos && values.length === 0 && !modoVacio) {
       // Estaban todos marcados de forma implícita — desmarcar uno lo
       // convierte en "todos menos este", explícito.
       onChange(opciones.map(getValue).filter((x) => x !== v));
@@ -93,15 +119,23 @@ function FiltroMultiSelect({ label, values, onChange, opciones, getValue = (o) =
   const quitar = (v) => onChange(values.filter((x) => x !== v));
   const reincluir = (v) => onChange([...values, v]);
 
-  const deseleccionarTodo = () => { onChange([]); setModoVacio(true); };
-  const seleccionarTodo = () => { onChange([]); setModoVacio(false); };
+  const deseleccionarTodo = () => {
+    onChange([]);
+    if (vacioSignificaTodos) setModoVacio(true);
+  };
+  const seleccionarTodo = () => {
+    if (vacioSignificaTodos) { onChange([]); setModoVacio(false); }
+    else onChange(opciones.map(getValue));
+  };
 
-  // Qué lado enseñar en los chips: el más corto.
+  // Qué lado enseñar en los chips: el más corto. Con `vacioSignificaTodos =
+  // false` no tiene sentido el modo "excluidos" (values ya es la lista
+  // explícita de elegidos), así que ese lado se calcula solo en el otro modo.
   const excluidos = useMemo(() => {
-    if (values.length === 0) return [];
+    if (!vacioSignificaTodos || values.length === 0) return [];
     return opciones.filter((o) => !values.includes(getValue(o)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [values, opciones]);
+  }, [values, opciones, vacioSignificaTodos]);
 
   const incluidos = useMemo(() => {
     if (values.length === 0) return [];
@@ -109,13 +143,22 @@ function FiltroMultiSelect({ label, values, onChange, opciones, getValue = (o) =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [values, opciones]);
 
-  const modoExclusion = values.length > 0 && excluidos.length < incluidos.length;
-  const chipsAMostrar = modoExclusion ? excluidos : incluidos;
+  const modoExclusion = vacioSignificaTodos && values.length > 0 && excluidos.length < incluidos.length;
+  // En modo explícito, si ya están TODAS las opciones elegidas no hace
+  // falta pintar un chip por cada una (el botón ya dice "Todos (N)").
+  const todosExplicitosElegidos = !vacioSignificaTodos && values.length > 0 && values.length === opciones.length;
+  const chipsAMostrar = modoExclusion ? excluidos : (todosExplicitosElegidos ? [] : incluidos);
 
   let textoBoton = placeholder;
-  if (values.length === 0 && modoVacio) textoBoton = 'Ninguno seleccionado';
-  else if (values.length > 0 && modoExclusion) textoBoton = `Todos menos ${excluidos.length}`;
-  else if (values.length > 0) textoBoton = `${values.length} seleccionado${values.length !== 1 ? 's' : ''}`;
+  if (vacioSignificaTodos) {
+    if (values.length === 0 && modoVacio) textoBoton = 'Ninguno seleccionado';
+    else if (values.length > 0 && modoExclusion) textoBoton = `Todos menos ${excluidos.length}`;
+    else if (values.length > 0) textoBoton = `${values.length} seleccionado${values.length !== 1 ? 's' : ''}`;
+  } else if (todosExplicitosElegidos) {
+    textoBoton = `Todos (${opciones.length})`;
+  } else if (values.length > 0) {
+    textoBoton = `${values.length} seleccionado${values.length !== 1 ? 's' : ''}`;
+  }
 
   return (
     <div className={className} ref={ref} style={{ position: 'relative' }}>
@@ -125,13 +168,13 @@ function FiltroMultiSelect({ label, values, onChange, opciones, getValue = (o) =
         onClick={() => setAbierto((v) => !v)}
         className={`${inputClasses} w-full flex items-center justify-between gap-2 text-left !font-normal`}
       >
-        <span className={values.length === 0 && !modoVacio ? 'text-slate-400 dark:text-slate-500' : ''}>
+        <span className={values.length === 0 && (!vacioSignificaTodos || !modoVacio) ? 'text-slate-400 dark:text-slate-500' : ''}>
           {textoBoton}
         </span>
         <ChevronDown size={14} className="shrink-0 text-slate-400" />
       </button>
 
-      {(chipsAMostrar.length > 0 || (values.length === 0 && modoVacio)) && (
+      {(chipsAMostrar.length > 0 || (vacioSignificaTodos && values.length === 0 && modoVacio)) && (
         <div className="flex flex-wrap items-center gap-1 mt-1.5">
           {modoExclusion && chipsAMostrar.length > 0 && (
             <span className="text-[11px] text-slate-400 dark:text-slate-500 mr-0.5">Excluidos:</span>
@@ -168,7 +211,7 @@ function FiltroMultiSelect({ label, values, onChange, opciones, getValue = (o) =
               Deseleccionar todo
             </button>
           )}
-          {values.length === 0 && modoVacio && (
+          {vacioSignificaTodos && values.length === 0 && modoVacio && (
             <span className="text-[11px] text-slate-400 dark:text-slate-500">Marca los que quieras en el buscador de abajo</span>
           )}
         </div>

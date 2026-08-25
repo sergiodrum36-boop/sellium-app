@@ -47,6 +47,29 @@
  * aparte y columnas de tabla separadas con un borde vertical del resto. OJO:
  * mismo aviso que en Clientes, solo los movimientos importados DESPUÉS de
  * que se añadiera ese campo traen este dato.
+ *
+ * SELECTOR DE DISTRIBUIDOR MÚLTIPLE (2026-08-25, a petición de Sergio:
+ * "tiene que estar la opción de poder escoger a uno, varios o todos los
+ * distribuidores, esto tiene que ser para sell out por cliente y marca") —
+ * mismo cambio que DashboardSellOutClientes.js (ver el comentario extenso
+ * allí): `idsDistribuidores` pasa a ser estado LOCAL de esta pantalla (ya no
+ * el selector global compartido con "Gestión por Distribuidor"), con
+ * <FiltroMultiSelect vacioSignificaTodos={false}/>. La única diferencia real
+ * con Clientes es cómo se agrupan las filas: aquí se agrupa por MARCA, y
+ * `id_marca` es un id del catálogo GLOBAL (compartido por todos los
+ * distribuidores) — si se agregaran movimientos de varios distribuidores
+ * agrupando tal cual por `id_marca`, las ventas de la misma marca en
+ * distribuidores distintos se MEZCLARÍAN en una sola fila, perdiendo de
+ * vista de qué distribuidor viene cada una (lo contrario de lo que se pidió:
+ * "todo junto, CON columna Distribuidor"). Por eso, con más de un
+ * distribuidor elegido (`modoMultiDistribuidor`), antes de agregar se
+ * sustituye `id_marca` por una clave compuesta `"idDistribuidor::idMarca"`
+ * SOLO para la agrupación (`movimientosParaAgregacion` — `nombre_marca` no
+ * se toca, así que se sigue viendo el nombre real de la marca); con un solo
+ * distribuidor elegido no se toca nada y el comportamiento es idéntico al de
+ * antes. "Corregir marca" (mueve movimientos de una marca real a otra) deja
+ * de tener sentido con varios distribuidores a la vez — se oculta esa
+ * columna y el modal en ese caso, ver más abajo.
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -98,12 +121,22 @@ const BADGE_ESTADO = {
 };
 const ETIQUETA_ESTADO = { activo: 'Activa', nuevo: 'Nueva', recuperado: 'Recuperada', perdido: 'Perdida' };
 
-// idDistribuidor/onCambiarDistribuidor (selector de distribuidor GLOBAL, a
-// petición de Sergio — análisis de IA de julio 2026): ya no son estado
-// local, ver el mismo comentario en DashboardSellOutClientes.js.
-function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales, idDistribuidor, onCambiarDistribuidor }) {
+// idsDistribuidores: estado LOCAL de esta pantalla (array de ids), ya NO
+// compartido con "Gestión por Distribuidor" — ver comentario de cabecera
+// "SELECTOR DE DISTRIBUIDOR MÚLTIPLE" (2026-08-25).
+function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales }) {
+  const [idsDistribuidores, setIdsDistribuidores] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
   const [cargando, setCargando] = useState(false);
+
+  // id -> nombre_distribuidor, para la columna "Distribuidor" y el mensaje
+  // de "Corregir marca". true con más de un distribuidor elegido a la vez.
+  const mapaNombreDistribuidor = useMemo(() => {
+    const m = new Map();
+    (listaDistribuidores || []).forEach(d => m.set(d.id, d.nombre_distribuidor));
+    return m;
+  }, [listaDistribuidores]);
+  const modoMultiDistribuidor = idsDistribuidores.length > 1;
 
   // [{ anio, meses }, ...] — uno por año marcado en PeriodoComparador, todos
   // con el mismo conjunto de meses (índices 0-11), como en DashboardSellOutClientes.js.
@@ -115,7 +148,8 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
   const [filtroPreventista, setFiltroPreventista] = useState([]);
   const [filtroClienteId, setFiltroClienteId] = useState([]);
 
-  // --- Modal "Corregir marca" ---
+  // --- Modal "Corregir marca" (solo disponible con UN distribuidor elegido
+  // — ver comentario de cabecera) ---
   const [marcaACorregir, setMarcaACorregir] = useState(null); // fila de filasMarcas, o null si el modal está cerrado
   const [marcaDestinoId, setMarcaDestinoId] = useState('');
   const [mesesCorregirSeleccionados, setMesesCorregirSeleccionados] = useState(new Set());
@@ -124,28 +158,34 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
   const [cargandoAlias, setCargandoAlias] = useState(false);
   const [corrigiendo, setCorrigiendo] = useState(false);
 
+  // Carga en paralelo los movimientos de CADA distribuidor elegido y los
+  // junta en un único array — mismo patrón que DashboardSellOutClientes.js
+  // (ver el comentario extenso allí sobre la caché por-distribuidor).
   const cargarMovimientos = useCallback(async () => {
-    if (!idDistribuidor || !idUsuario) { setMovimientos([]); return; }
+    if (!idsDistribuidores.length || !idUsuario) { setMovimientos([]); return; }
     setCargando(true);
     try {
-      const datos = await getMovimientosSellOutClientesPorDistribuidor(idUsuario, idDistribuidor);
-      setMovimientos(datos);
+      const resultadosPorDistribuidor = await Promise.all(
+        idsDistribuidores.map(id => getMovimientosSellOutClientesPorDistribuidor(idUsuario, id))
+      );
+      setMovimientos(resultadosPorDistribuidor.flat());
     } catch (error) {
       console.error('Error cargando Sell-Out por Marca:', error);
-      alert('No se pudieron cargar los datos de este distribuidor: ' + error.message);
+      alert('No se pudieron cargar los datos de los distribuidores elegidos: ' + error.message);
     }
     setCargando(false);
-  }, [idUsuario, idDistribuidor]);
+  }, [idUsuario, idsDistribuidores]);
 
   useEffect(() => { cargarMovimientos(); }, [cargarMovimientos]);
 
-  // Al cambiar de distribuidor, los filtros de zona/preventista/cliente del
-  // anterior ya no tienen sentido (mismo motivo que DashboardSellOutClientes.js).
+  // Al cambiar la selección de distribuidor(es), los filtros de
+  // zona/preventista/cliente de la selección anterior ya no tienen sentido
+  // (mismo motivo que DashboardSellOutClientes.js).
   useEffect(() => {
     setFiltroZona([]);
     setFiltroPreventista([]);
     setFiltroClienteId([]);
-  }, [idDistribuidor]);
+  }, [idsDistribuidores]);
 
   // Opciones de los desplegables de filtro — solo códigos/nombres que de
   // verdad aparecen en los movimientos del distribuidor elegido.
@@ -224,6 +264,18 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
   const periodoActualLabel = formatearPeriodo(entryBase);
   const periodoAnteriorLabel = formatearPeriodo(entryComparacion);
 
+  // Solo se activa con más de un distribuidor elegido (ver comentario de
+  // cabecera "SELECTOR DE DISTRIBUIDOR MÚLTIPLE"): sustituye `id_marca` por
+  // una clave compuesta "idDistribuidor::idMarca" ÚNICAMENTE para que la
+  // agregación de abajo agrupe cada marca POR DISTRIBUIDOR en vez de
+  // mezclar las ventas de la misma marca en distintos distribuidores en una
+  // sola fila. `nombre_marca` no se toca — la fila sigue mostrando el
+  // nombre real de la marca, no la clave compuesta.
+  const movimientosParaAgregacion = useMemo(() => {
+    if (!modoMultiDistribuidor) return movimientosFiltrados;
+    return movimientosFiltrados.map(mv => ({ ...mv, id_marca: `${mv.id_distribuidor}::${mv.id_marca}` }));
+  }, [movimientosFiltrados, modoMultiDistribuidor]);
+
   // --------------------------------------------------------------
   // Agregación por marca
   // --------------------------------------------------------------
@@ -233,23 +285,31 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
     // Mismo bucle de agregación que DashboardSellOutClientes.js, en un
     // módulo compartido (ver cabecera de agregacionSellOutPorPeriodo.js).
     // Dos diferencias respecto a Clientes, las dos a propósito:
-    //  - se parte de `movimientosFiltrados`: aquí el filtro de Zona/
-    //    Preventista/Cliente se aplica ANTES, sobre los movimientos crudos,
-    //    porque cada línea trae su propia zona y una MARCA no tiene zona
-    //    propia (no es un atributo de la entidad agrupada).
-    //  - sin `camposArrastre`, por lo mismo: no hay tipología/zona/
-    //    preventista que arrastrar a la fila de una marca.
-    return agregarSellOutPorPeriodo({
-      movimientos: movimientosFiltrados,
+    //  - se parte de `movimientosParaAgregacion` (== movimientosFiltrados
+    //    salvo con varios distribuidores elegidos, ver arriba): aquí el
+    //    filtro de Zona/Preventista/Cliente se aplica ANTES, sobre los
+    //    movimientos crudos, porque cada línea trae su propia zona y una
+    //    MARCA no tiene zona propia (no es un atributo de la entidad
+    //    agrupada).
+    //  - sin `camposArrastre` propio salvo 'id_distribuidor' (solo con
+    //    varios elegidos, para la columna "Distribuidor"): no hay
+    //    tipología/zona/preventista que arrastrar a la fila de una marca.
+    const filas = agregarSellOutPorPeriodo({
+      movimientos: movimientosParaAgregacion,
       campoId: 'id_marca',
       campoNombre: 'nombre_marca',
       campoDistinto: 'id_cliente',
       prefijoDistintos: 'clientes',
       setMesesActual,
       setMesesAnterior,
-      inicioPeriodoActual
+      inicioPeriodoActual,
+      camposArrastre: modoMultiDistribuidor ? ['id_distribuidor'] : undefined
     });
-  }, [movimientosFiltrados, mesesPeriodoActual, setMesesActual, setMesesAnterior, inicioPeriodoActual]);
+
+    return modoMultiDistribuidor
+      ? filas.map(f => ({ ...f, nombreDistribuidor: mapaNombreDistribuidor.get(f.id_distribuidor) || f.id_distribuidor }))
+      : filas;
+  }, [movimientosParaAgregacion, mesesPeriodoActual, setMesesActual, setMesesAnterior, inicioPeriodoActual, modoMultiDistribuidor, mapaNombreDistribuidor]);
 
   // filasBase: filasMarcas + búsqueda por nombre, SIN el filtro de estado
   // (zona/preventista/cliente ya están aplicados más arriba, dentro de
@@ -288,10 +348,15 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
     const diferenciaEuros = facturacionActual - facturacionAnterior;
     const variacionEuros = facturacionAnterior > 0 ? (diferenciaEuros / facturacionAnterior) * 100 : (facturacionActual > 0 ? null : 0);
 
+    // OJO: contra `movimientosParaAgregacion`, no `movimientosFiltrados` —
+    // con varios distribuidores elegidos, `filasFiltradas[].id_marca` es la
+    // clave compuesta "idDistribuidor::idMarca" (ver `movimientosParaAgregacion`
+    // más arriba), así que hay que comparar contra movimientos que también
+    // tengan esa misma clave compuesta en `id_marca`, o nunca habría match.
     const idsMarcasFiltradas = new Set(filasFiltradas.map(f => f.id_marca));
     const clientesActualSet = new Set();
     const clientesAnteriorSet = new Set();
-    movimientosFiltrados.forEach(mv => {
+    movimientosParaAgregacion.forEach(mv => {
       if (!mv.id_marca || !idsMarcasFiltradas.has(mv.id_marca) || (mv.uds_totales || 0) === 0 || !mv.id_cliente) return;
       if (setMesesActual.has(mv.mes_ano)) clientesActualSet.add(mv.id_cliente);
       else if (setMesesAnterior.has(mv.mes_ano)) clientesAnteriorSet.add(mv.id_cliente);
@@ -307,7 +372,7 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
       clientesAnterior: clientesAnteriorSet.size,
       varClientes
     };
-  }, [filasFiltradas, movimientosFiltrados, setMesesActual, setMesesAnterior]);
+  }, [filasFiltradas, movimientosParaAgregacion, setMesesActual, setMesesAnterior]);
 
   // KPIs de "Movimiento de marcas" — sobre filasBase (ver comentario arriba).
   const statusCounts = useMemo(() => ({
@@ -342,7 +407,7 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
     setAliasABorrar(new Set());
     setCargandoAlias(true);
     try {
-      const alias = await getAliasProductosSellOutPorDistribuidor(idUsuario, idDistribuidor);
+      const alias = await getAliasProductosSellOutPorDistribuidor(idUsuario, idsDistribuidores[0]);
       const relacionados = alias.filter(a => a.id_marca === fila.id_marca);
       setAliasRelacionados(relacionados);
       setAliasABorrar(new Set(relacionados.map(a => a.id))); // marcados por defecto, se pueden desmarcar
@@ -399,7 +464,7 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
     setCorrigiendo(true);
     try {
       const movidos = await reasignarMarcaSellOutClientesPorMeses(
-        idUsuario, idDistribuidor, marcaACorregir.id_marca, marcaDestino.id, marcaDestino.nombre_marca,
+        idUsuario, idsDistribuidores[0], marcaACorregir.id_marca, marcaDestino.id, marcaDestino.nombre_marca,
         [...mesesCorregirSeleccionados]
       );
       for (const idAlias of aliasABorrar) {
@@ -424,6 +489,12 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
   const BORDE_GRUPO_CELDA = 'border-l-2 !border-l-slate-200 dark:!border-l-slate-700';
   const columnasMarcas = [
     { titulo: 'Marca', valor: (f) => f.nombre_marca, render: (f) => f.nombre_marca },
+    // Columna "Distribuidor" (2026-08-25, selector múltiple): solo con más
+    // de un distribuidor elegido a la vez — igual que en
+    // DashboardSellOutClientes.js.
+    ...(modoMultiDistribuidor ? [
+      { titulo: 'Distribuidor', valor: (f) => f.nombreDistribuidor || '', render: (f) => f.nombreDistribuidor || '—' }
+    ] : []),
     {
       titulo: 'Estado', valor: (f) => f.estado,
       render: (f) => <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${BADGE_ESTADO[f.estado]}`}>{ETIQUETA_ESTADO[f.estado]}</span>,
@@ -465,7 +536,11 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
     },
     { titulo: 'Clientes año anterior', derecha: true, valor: (f) => f.clientesAnterior, render: (f) => f.clientesAnterior },
     { titulo: 'Última venta', valor: (f) => f.ultimaFecha || '', render: (f) => f.ultimaFecha || '—' },
-    {
+    // "Corregir marca" mueve movimientos de una marca real a otra en UN
+    // distribuidor concreto — deja de tener sentido (y `id_marca` ya no es
+    // el id real, ver `movimientosParaAgregacion`) con varios distribuidores
+    // elegidos a la vez, así que se oculta la columna entera.
+    ...(!modoMultiDistribuidor ? [{
       titulo: '',
       render: (f) => (
         <button
@@ -477,26 +552,27 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
           Corregir marca
         </button>
       ),
-    },
+    }] : []),
   ];
 
   return (
     <div>
       <h2 className={tituloPantalla}>Sell-Out por Marca</h2>
-      <p className={subtitulo}>Elige un distribuidor para ver cómo evoluciona cada marca: cuánto vende, a cuántos clientes distintos y cómo cambia frente al periodo de comparación.</p>
+      <p className={subtitulo}>Elige uno, varios o todos los distribuidores para ver cómo evoluciona cada marca: cuánto vende, a cuántos clientes distintos y cómo cambia frente al periodo de comparación.</p>
 
       <div className={`${filtroContenedor} mb-4`}>
-        <div>
-          <label className={etiqueta}>Distribuidor</label><br />
-          <select value={idDistribuidor} onChange={e => onCambiarDistribuidor(e.target.value)} className={inputClasses}>
-            <option value="">-- Elegir distribuidor --</option>
-            {(listaDistribuidores || []).map(d => (
-              <option key={d.id} value={d.id}>{d.nombre_distribuidor}</option>
-            ))}
-          </select>
-        </div>
+        <FiltroMultiSelect
+          label="Distribuidor"
+          values={idsDistribuidores}
+          onChange={setIdsDistribuidores}
+          placeholder="-- Elegir distribuidor(es) --"
+          opciones={listaDistribuidores || []}
+          getValue={(d) => d.id}
+          getLabel={(d) => d.nombre_distribuidor}
+          vacioSignificaTodos={false}
+        />
 
-        {idDistribuidor && mesesDisponibles.length > 0 && (
+        {idsDistribuidores.length > 0 && mesesDisponibles.length > 0 && (
           <FiltroTexto
             label="Buscar marca"
             value={busqueda}
@@ -505,7 +581,7 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
           />
         )}
 
-        {idDistribuidor && mesesDisponibles.length > 0 && (
+        {idsDistribuidores.length > 0 && mesesDisponibles.length > 0 && (
           <FiltroMultiSelect
             label="Zona"
             values={filtroZona}
@@ -517,7 +593,7 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
           />
         )}
 
-        {idDistribuidor && mesesDisponibles.length > 0 && (
+        {idsDistribuidores.length > 0 && mesesDisponibles.length > 0 && (
           <FiltroMultiSelect
             label="Preventista"
             values={filtroPreventista}
@@ -529,7 +605,7 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
           />
         )}
 
-        {idDistribuidor && mesesDisponibles.length > 0 && (
+        {idsDistribuidores.length > 0 && mesesDisponibles.length > 0 && (
           <FiltroMultiSelect
             label="Cliente"
             values={filtroClienteId}
@@ -540,27 +616,31 @@ function DashboardSellOutMarcas({ idUsuario, listaDistribuidores, marcasGlobales
         )}
       </div>
 
-      {idDistribuidor && mesesDisponibles.length > 0 && (
+      {idsDistribuidores.length > 0 && mesesDisponibles.length > 0 && (
         <PeriodoComparador aniosDisponibles={aniosDisponibles} onChange={setRangosPorAnio} />
       )}
 
-      {!idDistribuidor && (
+      {idsDistribuidores.length === 0 && (
         <div className={tarjeta}>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Elige un distribuidor arriba para ver sus marcas.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Elige uno o varios distribuidores arriba para ver sus marcas.</p>
         </div>
       )}
 
-      {idDistribuidor && cargando && (
-        <div className="text-slate-500 dark:text-slate-400">Cargando datos del distribuidor...</div>
+      {idsDistribuidores.length > 0 && cargando && (
+        <div className="text-slate-500 dark:text-slate-400">Cargando datos de los distribuidores elegidos...</div>
       )}
 
-      {idDistribuidor && !cargando && mesesDisponibles.length === 0 && (
+      {idsDistribuidores.length > 0 && !cargando && mesesDisponibles.length === 0 && (
         <div className={tarjeta}>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Este distribuidor todavía no tiene ningún dato de Sell-Out por Cliente importado.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {modoMultiDistribuidor
+              ? 'Estos distribuidores todavía no tienen ningún dato de Sell-Out por Cliente importado.'
+              : 'Este distribuidor todavía no tiene ningún dato de Sell-Out por Cliente importado.'}
+          </p>
         </div>
       )}
 
-      {idDistribuidor && !cargando && mesesDisponibles.length > 0 && (
+      {idsDistribuidores.length > 0 && !cargando && mesesDisponibles.length > 0 && (
         <>
           <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
             {entryComparacion

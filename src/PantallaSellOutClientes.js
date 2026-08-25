@@ -9,12 +9,17 @@
  * CAMBIO (selector de distribuidor GLOBAL, a petición de Sergio: "lo sigo
  * viendo un poco lioso" — análisis de IA de julio 2026): la lista de
  * distribuidores ya no se carga aquí — llega como prop `listaDistribuidoresGlobal`
- * desde App.js (la misma que usa "Gestión por Distribuidor"), y el
- * distribuidor elegido (`idDistribuidorSel`/`onCambiarDistribuidorSel`) se
- * pasa tal cual a los dos dashboards en vez de que cada uno mantenga su
- * propio estado suelto — así elegir un distribuidor en cualquiera de los 3
- * sitios (Gestión, Clientes, Por Marca) se refleja al momento en los otros
- * dos.
+ * desde App.js (la misma que usa "Gestión por Distribuidor").
+ *
+ * CAMBIO (2026-08-25, selector de distribuidor MÚLTIPLE en Clientes/Marca, a
+ * petición de Sergio: "tiene que estar la opción de poder escoger a uno,
+ * varios o todos los distribuidores"): lo de arriba (`idDistribuidorSel`
+ * único y compartido con "Gestión por Distribuidor") YA NO se pasa a
+ * DashboardSellOutClientes.js/DashboardSellOutMarcas.js — cada uno de los
+ * dos gestiona ahora su PROPIO estado local de selección múltiple, así que
+ * elegir distribuidor(es) en cualquiera de esas dos pestañas ya no se
+ * refleja en "Gestión por Distribuidor" (y viceversa) — solo
+ * `listaDistribuidoresGlobal` (la lista de opciones) se sigue compartiendo.
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -40,7 +45,7 @@ export const PESTAÑAS_SELLOUT_CLIENTES = [
 
 function PantallaSellOutClientes({
   idUsuario, vistaActiva, onNavigate,
-  idDistribuidorSel, onCambiarDistribuidorSel, listaDistribuidoresGlobal,
+  listaDistribuidoresGlobal,
 }) {
 
   const listaDistribuidores = listaDistribuidoresGlobal || [];
@@ -84,8 +89,6 @@ function PantallaSellOutClientes({
               <DashboardSellOutClientes
                 idUsuario={idUsuario}
                 listaDistribuidores={listaDistribuidores}
-                idDistribuidor={idDistribuidorSel}
-                onCambiarDistribuidor={onCambiarDistribuidorSel}
               />
             </div>
           )}
@@ -95,8 +98,6 @@ function PantallaSellOutClientes({
                 idUsuario={idUsuario}
                 listaDistribuidores={listaDistribuidores}
                 marcasGlobales={marcasGlobales}
-                idDistribuidor={idDistribuidorSel}
-                onCambiarDistribuidor={onCambiarDistribuidorSel}
               />
             </div>
           )}

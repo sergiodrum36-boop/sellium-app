@@ -56,6 +56,28 @@
  *     cliente distinto o vacío — más ambiguo (dos clientes con nombres
  *     parecidos podrían ser legítimamente distintos), se marca solo como
  *     aviso para que Sergio lo revise a mano.
+ *
+ * SELECTOR DE DISTRIBUIDOR MÚLTIPLE (2026-08-25, a petición de Sergio:
+ * "tiene que estar la opción de poder escoger a uno, varios o todos los
+ * distribuidores, esto tiene que ser para sell out por cliente y marca").
+ * Hasta ahora `idDistribuidor` era un valor único y GLOBAL, compartido con
+ * "Gestión por Distribuidor" (llegaba como prop desde App.js vía
+ * PantallaSellOutClientes.js — ver más abajo el comentario, ya obsoleto,
+ * que lo explicaba). Ahora esta pantalla (y su hermana
+ * DashboardSellOutMarcas.js) tienen su PROPIO estado local
+ * `idsDistribuidores` (array, reutilizando <FiltroMultiSelect/> con
+ * `vacioSignificaTodos={false}` — ver cabecera de ese archivo) e ignoran el
+ * selector global: elegir un distribuidor en "Gestión por Distribuidor" ya
+ * NO se refleja aquí, y viceversa (decisión de Sergio: "independizar solo
+ * estas 2 pantallas"). Con varios distribuidores elegidos, sus movimientos y
+ * clientes se cargan y se ven TODOS JUNTOS en la misma tabla, con una
+ * columna "Distribuidor" añadida (solo cuando hay más de uno elegido) para
+ * poder distinguir de dónde viene cada fila — nunca hay colisión de
+ * `id_cliente` entre distribuidores distintos porque `clientesSellOut` ya
+ * guarda un documento por (distribuidor, cliente), así que la agregación de
+ * agregacionSellOutPorPeriodo.js no necesita ningún cambio. La "zona de
+ * peligro" (borrar datos) y el detector de duplicados quedan con sentido
+ * solo cuando hay EXACTAMENTE un distribuidor elegido — ver donde se usan.
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
@@ -109,16 +131,26 @@ const BADGE_ESTADO = {
 };
 const ETIQUETA_ESTADO = { activo: 'Activo', nuevo: 'Nuevo', recuperado: 'Recuperado', perdido: 'Perdido' };
 
-// idDistribuidor/onCambiarDistribuidor (selector de distribuidor GLOBAL, a
-// petición de Sergio — análisis de IA de julio 2026): ya no son estado
-// local. Llegan como props desde PantallaSellOutClientes.js, que a su vez
-// los recibe de App.js — el MISMO valor que usan "Gestión por Distribuidor"
-// y "Sell-Out por Marca", para que elegir un distribuidor en cualquiera de
-// los 3 sitios se refleje al momento en los otros dos.
-function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuidor, onCambiarDistribuidor }) {
+// idsDistribuidores: estado LOCAL de esta pantalla (array de ids), ya NO
+// compartido con "Gestión por Distribuidor" — ver comentario de cabecera
+// "SELECTOR DE DISTRIBUIDOR MÚLTIPLE" (2026-08-25).
+function DashboardSellOutClientes({ idUsuario, listaDistribuidores }) {
+  const [idsDistribuidores, setIdsDistribuidores] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
   const [clientesMaestro, setClientesMaestro] = useState([]);
   const [cargando, setCargando] = useState(false);
+
+  // id -> nombre_distribuidor, para pintar la columna "Distribuidor" y los
+  // mensajes de la zona de peligro sin recorrer `listaDistribuidores` cada vez.
+  const mapaNombreDistribuidor = useMemo(() => {
+    const m = new Map();
+    (listaDistribuidores || []).forEach(d => m.set(d.id, d.nombre_distribuidor));
+    return m;
+  }, [listaDistribuidores]);
+  // true cuando hay más de un distribuidor elegido a la vez — activa la
+  // columna "Distribuidor" en la tabla y desactiva la zona de peligro (que
+  // solo tiene sentido para UN distribuidor concreto).
+  const variosDistribuidores = idsDistribuidores.length > 1;
 
   // [{ anio, meses }, ...] — uno por año marcado en PeriodoComparador, todos
   // con el mismo conjunto de meses (índices 0-11), como en DashboardVentasReales.js.
@@ -138,40 +170,53 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
 
   // Extraído del useEffect de abajo para poder volver a llamarlo tras
   // borrar los datos de este distribuidor (ver handleBorrarDistribuidor).
+  // Carga en paralelo los movimientos y el maestro de clientes de CADA
+  // distribuidor elegido (getMovimientosSellOutClientesPorDistribuidor /
+  // getClientesSellOutPorDistribuidor siguen siendo por-un-distribuidor —
+  // ya están cacheadas en memoria por (usuario, distribuidor), ver
+  // cacheLecturas.js, así que reelegir un distribuidor ya visto no vuelve a
+  // pegarle a Firestore) y los junta en un único array — la agregación por
+  // periodo de más abajo ya sabe distinguir de qué distribuidor es cada fila
+  // porque cada movimiento/cliente trae su propio `id_distribuidor`.
   const cargarDatosDistribuidor = useCallback(async () => {
-    if (!idDistribuidor || !idUsuario) { setMovimientos([]); setClientesMaestro([]); return; }
+    if (!idsDistribuidores.length || !idUsuario) { setMovimientos([]); setClientesMaestro([]); return; }
     setCargando(true);
     try {
-      const [datosMovimientos, datosClientes] = await Promise.all([
-        getMovimientosSellOutClientesPorDistribuidor(idUsuario, idDistribuidor),
-        getClientesSellOutPorDistribuidor(idUsuario, idDistribuidor)
-      ]);
-      setMovimientos(datosMovimientos);
-      setClientesMaestro(datosClientes);
+      const resultadosPorDistribuidor = await Promise.all(idsDistribuidores.map(id => Promise.all([
+        getMovimientosSellOutClientesPorDistribuidor(idUsuario, id),
+        getClientesSellOutPorDistribuidor(idUsuario, id)
+      ])));
+      setMovimientos(resultadosPorDistribuidor.flatMap(([movs]) => movs));
+      setClientesMaestro(resultadosPorDistribuidor.flatMap(([, clientes]) => clientes));
     } catch (error) {
       console.error('Error cargando Sell-Out por Cliente:', error);
-      alert('No se pudieron cargar los datos de este distribuidor: ' + error.message);
+      alert('No se pudieron cargar los datos de los distribuidores elegidos: ' + error.message);
     }
     setCargando(false);
-  }, [idUsuario, idDistribuidor]);
+  }, [idUsuario, idsDistribuidores]);
 
   useEffect(() => {
-    // Al cambiar de distribuidor, los filtros de zona/preventista/cliente del
-    // distribuidor anterior ya no tienen sentido (los códigos y nombres
-    // pueden no existir en el nuevo).
+    // Al cambiar la selección de distribuidor(es), los filtros de
+    // zona/preventista/cliente de la selección anterior ya no tienen
+    // sentido (los códigos y nombres pueden no existir en la nueva).
     setFiltroZona([]);
     setFiltroPreventista([]);
     setFiltroClienteId([]);
     setConfirmacionBorrado('');
     cargarDatosDistribuidor();
-  }, [idUsuario, idDistribuidor, cargarDatosDistribuidor]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idUsuario, idsDistribuidores, cargarDatosDistribuidor]);
 
+  // Solo tiene sentido con EXACTAMENTE un distribuidor elegido (ver
+  // `variosDistribuidores` — la zona de peligro se oculta si hay más de
+  // uno, o ninguno).
   const handleBorrarDistribuidor = async () => {
     if (confirmacionBorrado.toUpperCase() !== 'BORRAR') {
       alert('Escribe BORRAR en el campo de confirmación para continuar.');
       return;
     }
-    const nombreDistribuidor = (listaDistribuidores || []).find(d => d.id === idDistribuidor)?.nombre_distribuidor || idDistribuidor;
+    const idDistribuidorUnico = idsDistribuidores[0];
+    const nombreDistribuidor = mapaNombreDistribuidor.get(idDistribuidorUnico) || idDistribuidorUnico;
     if (!window.confirm(
       `Vas a mover a la papelera TODOS los clientes y movimientos de Sell-Out por Cliente Final de "${nombreDistribuidor}". ` +
       `No se borran de forma permanente (podrás recuperarlos desde Papelera si fue un error), pero desaparecerán de esta pantalla. ¿Continuar?`
@@ -180,7 +225,7 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
     setBorrando(true);
     try {
       const actor = { uid: auth.currentUser?.uid, email: auth.currentUser?.email };
-      const resultado = await resetSellOutClientesPorDistribuidor(idUsuario, idDistribuidor, actor);
+      const resultado = await resetSellOutClientesPorDistribuidor(idUsuario, idDistribuidorUnico, actor);
       setConfirmacionBorrado('');
       await cargarDatosDistribuidor();
       alert(`Movidos a la papelera: ${resultado.movimientos} movimiento(s) y ${resultado.clientes} cliente(s) de "${nombreDistribuidor}".`);
@@ -257,15 +302,26 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
       setMesesActual,
       setMesesAnterior,
       inicioPeriodoActual,
-      camposArrastre: ['tipologia', 'comercial', 'preventista']
+      // 'id_distribuidor' se arrastra igual que tipologia/comercial/
+      // preventista (2026-08-25, selector de distribuidor múltiple) — no
+      // hace falta condicionarlo a `variosDistribuidores`: con uno solo
+      // elegido todos los movimientos comparten el mismo id_distribuidor,
+      // así que no cambia nada arrastrarlo siempre.
+      camposArrastre: ['tipologia', 'comercial', 'preventista', 'id_distribuidor']
     });
 
     // `zona` es solo la etiqueta legible del código de comercial — se añade
     // aquí y no en el módulo compartido porque el mapeo código->zona es
-    // propio de esta pantalla (Marcas no lista zona por fila). El orden que
+    // propio de esta pantalla (Marcas no lista zona por fila). `nombreDistribuidor`
+    // igual, para la columna "Distribuidor" (solo se pinta con varios
+    // distribuidores elegidos, ver `variosDistribuidores`). El orden que
     // trae `filas` (udsActual descendente) se conserva: map no reordena.
-    return filas.map(f => ({ ...f, zona: etiquetaZona(f.comercial) }));
-  }, [movimientos, mesesPeriodoActual, setMesesActual, setMesesAnterior, inicioPeriodoActual]);
+    return filas.map(f => ({
+      ...f,
+      zona: etiquetaZona(f.comercial),
+      nombreDistribuidor: mapaNombreDistribuidor.get(f.id_distribuidor) || f.id_distribuidor
+    }));
+  }, [movimientos, mesesPeriodoActual, setMesesActual, setMesesAnterior, inicioPeriodoActual, mapaNombreDistribuidor]);
 
   // Opciones de los desplegables — solo códigos/nombres que de verdad
   // aparecen en los clientes del distribuidor elegido (nunca hardcodeadas).
@@ -370,19 +426,27 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
   // --------------------------------------------------------------
   // Detector de clientes duplicados en el maestro (solo aviso, no fusiona nada)
   // --------------------------------------------------------------
+  // Claves de agrupación con el id_distribuidor por delante (2026-08-25,
+  // selector múltiple): antes se agrupaba solo por código/nombre porque
+  // SIEMPRE eran clientes del mismo (único) distribuidor cargado — ahora
+  // que puede haber varios a la vez, el mismo código de cliente en DOS
+  // distribuidores distintos es perfectamente normal (cada uno lleva su
+  // propia numeración) y no debe avisarse como duplicado. Con un solo
+  // distribuidor elegido el comportamiento es idéntico al de antes.
   const duplicados = useMemo(() => {
-    const porCodigo = new Map(); // cod_cliente_origen -> [clientes]
-    const porNombre = new Map(); // nombre normalizado -> [clientes]
+    const porCodigo = new Map(); // "idDistribuidor::cod_cliente_origen" -> [clientes]
+    const porNombre = new Map(); // "idDistribuidor::nombreNormalizado" -> [clientes]
     clientesMaestro.forEach(c => {
       if (c.cod_cliente_origen) {
-        const lista = porCodigo.get(c.cod_cliente_origen) || [];
+        const clave = `${c.id_distribuidor}::${c.cod_cliente_origen}`;
+        const lista = porCodigo.get(clave) || [];
         lista.push(c);
-        porCodigo.set(c.cod_cliente_origen, lista);
+        porCodigo.set(clave, lista);
       }
-      const nombreNorm = norm(c.nombre_cliente);
-      const listaNombre = porNombre.get(nombreNorm) || [];
+      const claveNombre = `${c.id_distribuidor}::${norm(c.nombre_cliente)}`;
+      const listaNombre = porNombre.get(claveNombre) || [];
       listaNombre.push(c);
-      porNombre.set(nombreNorm, listaNombre);
+      porNombre.set(claveNombre, listaNombre);
     });
 
     const gruposPorCodigo = [...porCodigo.values()].filter(g => g.length > 1);
@@ -403,6 +467,12 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
   const BORDE_GRUPO_CELDA = 'border-l-2 !border-l-slate-200 dark:!border-l-slate-700';
   const columnasClientes = [
     { titulo: 'Cliente', valor: (f) => f.nombre_cliente, render: (f) => f.nombre_cliente },
+    // Columna "Distribuidor" (2026-08-25, selector múltiple): solo se
+    // incluye con más de un distribuidor elegido a la vez — con uno solo
+    // sería una columna redundante (todas las filas dirían lo mismo).
+    ...(variosDistribuidores ? [
+      { titulo: 'Distribuidor', valor: (f) => f.nombreDistribuidor || '', render: (f) => f.nombreDistribuidor || '—' }
+    ] : []),
     { titulo: 'Zona', valor: (f) => f.zona || '', render: (f) => f.zona || '—' },
     { titulo: 'Preventista', valor: (f) => f.preventista || '', render: (f) => f.preventista || '—' },
     { titulo: 'Tipología', valor: (f) => f.tipologia || '', render: (f) => f.tipologia || '—' },
@@ -467,6 +537,10 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
           totales (bg-slate-50/dark:bg-slate-900, ver `trTotales` en
           uiClasses.js) para que no se note el corte al desplazar. */}
       <td className={`${tdClasses} sticky left-0 z-[2] bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700`}>TOTALES ({filasFiltradas.length})</td>
+      {/* Una celda vacía más cuando la columna "Distribuidor" está presente
+          (2026-08-25) — el número de <td> aquí tiene que casar siempre con
+          columnasClientes, ver comentario de TablaOrdenable.js sobre filaTotales. */}
+      {variosDistribuidores && <td className={tdClasses}></td>}
       <td className={tdClasses}></td>
       <td className={tdClasses}></td>
       <td className={tdClasses}></td>
@@ -496,20 +570,21 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
   return (
     <div>
       <h2 className={tituloPantalla}>Sell-Out por Cliente Final</h2>
-      <p className={subtitulo}>Elige un distribuidor para ver el detalle de sus clientes: qué compran, cuánto y cómo evolucionan frente al mismo periodo del año pasado.</p>
+      <p className={subtitulo}>Elige uno, varios o todos los distribuidores para ver el detalle de sus clientes: qué compran, cuánto y cómo evolucionan frente al mismo periodo del año pasado.</p>
 
       <div className={`${filtroContenedor} mb-4`}>
-        <div>
-          <label className={etiqueta}>Distribuidor</label><br />
-          <select value={idDistribuidor} onChange={e => onCambiarDistribuidor(e.target.value)} className={inputClasses}>
-            <option value="">-- Elegir distribuidor --</option>
-            {(listaDistribuidores || []).map(d => (
-              <option key={d.id} value={d.id}>{d.nombre_distribuidor}</option>
-            ))}
-          </select>
-        </div>
+        <FiltroMultiSelect
+          label="Distribuidor"
+          values={idsDistribuidores}
+          onChange={setIdsDistribuidores}
+          placeholder="-- Elegir distribuidor(es) --"
+          opciones={listaDistribuidores || []}
+          getValue={(d) => d.id}
+          getLabel={(d) => d.nombre_distribuidor}
+          vacioSignificaTodos={false}
+        />
 
-        {idDistribuidor && mesesDisponibles.length > 0 && (
+        {idsDistribuidores.length > 0 && mesesDisponibles.length > 0 && (
           <FiltroTexto
             label="Buscar cliente"
             value={busqueda}
@@ -518,7 +593,7 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
           />
         )}
 
-        {idDistribuidor && mesesDisponibles.length > 0 && (
+        {idsDistribuidores.length > 0 && mesesDisponibles.length > 0 && (
           <FiltroMultiSelect
             label="Zona"
             values={filtroZona}
@@ -530,7 +605,7 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
           />
         )}
 
-        {idDistribuidor && mesesDisponibles.length > 0 && (
+        {idsDistribuidores.length > 0 && mesesDisponibles.length > 0 && (
           <FiltroMultiSelect
             label="Preventista"
             values={filtroPreventista}
@@ -542,7 +617,7 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
           />
         )}
 
-        {idDistribuidor && mesesDisponibles.length > 0 && (
+        {idsDistribuidores.length > 0 && mesesDisponibles.length > 0 && (
           <FiltroMultiSelect
             label="Cliente"
             values={filtroClienteId}
@@ -553,32 +628,36 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
         )}
       </div>
 
-      {idDistribuidor && mesesDisponibles.length > 0 && (
+      {idsDistribuidores.length > 0 && mesesDisponibles.length > 0 && (
         <PeriodoComparador aniosDisponibles={aniosDisponibles} onChange={setRangosPorAnio} />
       )}
 
-      {!idDistribuidor && (
+      {idsDistribuidores.length === 0 && (
         <div className={tarjeta}>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Elige un distribuidor arriba para ver sus clientes.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Elige uno o varios distribuidores arriba para ver sus clientes.</p>
         </div>
       )}
 
-      {idDistribuidor && cargando && (
-        <div className="text-slate-500 dark:text-slate-400">Cargando datos del distribuidor...</div>
+      {idsDistribuidores.length > 0 && cargando && (
+        <div className="text-slate-500 dark:text-slate-400">Cargando datos de los distribuidores elegidos...</div>
       )}
 
-      {idDistribuidor && !cargando && mesesDisponibles.length === 0 && (
+      {idsDistribuidores.length > 0 && !cargando && mesesDisponibles.length === 0 && (
         <div className={tarjeta}>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Este distribuidor todavía no tiene ningún dato de Sell-Out por Cliente importado.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            {variosDistribuidores
+              ? 'Estos distribuidores todavía no tienen ningún dato de Sell-Out por Cliente importado.'
+              : 'Este distribuidor todavía no tiene ningún dato de Sell-Out por Cliente importado.'}
+          </p>
         </div>
       )}
 
-      {idDistribuidor && !cargando && mesesDisponibles.length > 0 && (
+      {idsDistribuidores.length > 0 && !cargando && mesesDisponibles.length > 0 && (
         <>
           {duplicados.total > 0 && (
             <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-300 dark:border-amber-500/40 text-amber-800 dark:text-amber-300 rounded-xl p-4 mb-4 text-sm">
               <div className="flex items-center justify-between gap-2">
-                <strong>⚠ Posibles clientes duplicados en el maestro de este distribuidor ({duplicados.total} grupo(s))</strong>
+                <strong>⚠ Posibles clientes duplicados en el maestro de {variosDistribuidores ? 'los distribuidores elegidos' : 'este distribuidor'} ({duplicados.total} grupo(s))</strong>
                 <button type="button" onClick={() => setMostrarDuplicados(v => !v)} className="text-xs underline shrink-0">
                   {mostrarDuplicados ? 'Ocultar detalle' : 'Ver detalle'}
                 </button>
@@ -591,6 +670,7 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
                       <ul className="list-disc pl-5 space-y-0.5">
                         {duplicados.gruposPorCodigo.map((grupo, i) => (
                           <li key={i}>
+                            {variosDistribuidores && <>[{mapaNombreDistribuidor.get(grupo[0].id_distribuidor) || grupo[0].id_distribuidor}] </>}
                             Código <strong>{grupo[0].cod_cliente_origen}</strong>: {grupo.map(c => `"${c.nombre_cliente}"`).join(', ')}
                           </li>
                         ))}
@@ -603,6 +683,7 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
                       <ul className="list-disc pl-5 space-y-0.5">
                         {duplicados.gruposPorNombre.map((grupo, i) => (
                           <li key={i}>
+                            {variosDistribuidores && <>[{mapaNombreDistribuidor.get(grupo[0].id_distribuidor) || grupo[0].id_distribuidor}] </>}
                             "{grupo[0].nombre_cliente}": códigos {grupo.map(c => c.cod_cliente_origen || '(sin código)').join(', ')}
                           </li>
                         ))}
@@ -730,32 +811,38 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
             )}
           </div>
 
-          {/* Zona de peligro: borrar todos los datos de este distribuidor */}
-          <div className="border border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10 rounded-xl p-4 mt-5 text-sm">
-            <strong className="text-red-700 dark:text-red-400">⚠ Borrar todos los datos de Sell-Out por Cliente de este distribuidor</strong>
-            <p className="text-slate-700 dark:text-slate-300 mt-1 mb-3">
-              Mueve a la papelera (recuperable, no se pierde nada) todos los clientes y movimientos de este distribuidor concreto —
-              los demás distribuidores no se tocan.
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <label className={etiqueta}>Escribe BORRAR para confirmar:</label>
-              <input
-                type="text"
-                value={confirmacionBorrado}
-                onChange={(e) => setConfirmacionBorrado(e.target.value)}
-                disabled={borrando}
-                className={`${inputClasses} !border-red-400 dark:!border-red-500/60 w-32`}
-              />
-              <button
-                type="button"
-                onClick={handleBorrarDistribuidor}
-                disabled={borrando || confirmacionBorrado.toUpperCase() !== 'BORRAR'}
-                className={`${botonPeligro} disabled:opacity-50`}
-              >
-                {borrando ? 'Borrando...' : 'Borrar datos de este distribuidor'}
-              </button>
+          {/* Zona de peligro: borrar todos los datos de este distribuidor —
+              solo tiene sentido con EXACTAMENTE un distribuidor elegido
+              (2026-08-25, selector múltiple: con varios o "todos" elegidos
+              no hay forma de saber cuál de ellos se quiere borrar sin un
+              selector aparte, así que se oculta — decisión de Sergio). */}
+          {idsDistribuidores.length === 1 && (
+            <div className="border border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10 rounded-xl p-4 mt-5 text-sm">
+              <strong className="text-red-700 dark:text-red-400">⚠ Borrar todos los datos de Sell-Out por Cliente de este distribuidor</strong>
+              <p className="text-slate-700 dark:text-slate-300 mt-1 mb-3">
+                Mueve a la papelera (recuperable, no se pierde nada) todos los clientes y movimientos de este distribuidor concreto —
+                los demás distribuidores no se tocan.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className={etiqueta}>Escribe BORRAR para confirmar:</label>
+                <input
+                  type="text"
+                  value={confirmacionBorrado}
+                  onChange={(e) => setConfirmacionBorrado(e.target.value)}
+                  disabled={borrando}
+                  className={`${inputClasses} !border-red-400 dark:!border-red-500/60 w-32`}
+                />
+                <button
+                  type="button"
+                  onClick={handleBorrarDistribuidor}
+                  disabled={borrando || confirmacionBorrado.toUpperCase() !== 'BORRAR'}
+                  className={`${botonPeligro} disabled:opacity-50`}
+                >
+                  {borrando ? 'Borrando...' : 'Borrar datos de este distribuidor'}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </>
       )}
     </div>

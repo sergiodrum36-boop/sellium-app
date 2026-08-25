@@ -521,12 +521,18 @@ function App() {
         {gruposVisitados.has('GRUPO_SELLOUT_CLIENTES') && (
           <div style={estiloGrupo(esPestañaDeSellOutClientes(pantallaActiva))}>
             <ErrorBoundary label="Sell-Out Clientes">
+              {/* idDistribuidorSel/onCambiarDistribuidorSel (selector GLOBAL)
+                  ya NO se pasan aquí (2026-08-25, a petición de Sergio: selector
+                  de distribuidor múltiple en Sell-Out por Cliente Final y por
+                  Marca) — esas dos pantallas tienen ahora su propio estado
+                  local de selección múltiple, independiente de "Gestión por
+                  Distribuidor" (que sigue usando el selector global más abajo).
+                  Solo listaDistribuidoresGlobal (la lista de opciones) se
+                  sigue compartiendo. */}
               <PantallaSellOutClientes
                 idUsuario={idUsuarioEfectivo}
                 vistaActiva={pantallaActiva}
                 onNavigate={setPantallaActiva}
-                idDistribuidorSel={idDistribuidorSel}
-                onCambiarDistribuidorSel={setIdDistribuidorSel}
                 listaDistribuidoresGlobal={listaDistribuidoresGlobal}
               />
             </ErrorBoundary>
