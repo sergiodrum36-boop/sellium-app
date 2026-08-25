@@ -43,6 +43,26 @@
  * reales aclaró (con capturas) que lo que de verdad necesita fijo es la fila
  * de TÍTULOS DE COLUMNA de cada tabla (CLIENTE/DISTRIBUIDOR/...).
  *
+ * PRIMERA COLUMNA FIJA (25/08/2026, a petición de Sergio: en tablas con
+ * muchas columnas — p.ej. Sell-Out Clientes — hacía falta ir constantemente
+ * de un lado a otro para relacionar cada fila con el dato de la izquierda,
+ * porque al desplazar horizontalmente la columna "Cliente" desaparecía de
+ * la vista). Igual que la cabecera, la PRIMERA columna (índice 0, tanto en
+ * `<thead>` como en cada fila del `<tbody>`) es SIEMPRE fija hacia la
+ * izquierda — tampoco hace falta ningún prop para activarlo, ya que en las
+ * ~19 tablas de la app la primera columna es siempre la que identifica la
+ * fila (Cliente/Distribuidor/Marca/...), así que fijarla siempre tiene
+ * sentido y nunca hay que decidir cuál fijar pantalla por pantalla.
+ * `position: sticky` necesita un fondo OPACO en la propia celda para tapar
+ * el resto de columnas al desplazarse por debajo — se usa `bg-white
+ * dark:bg-slate-800` (el mismo fondo que ya usan las tarjetas que envuelven
+ * estas tablas en toda la app), más un borde derecho sutil para que se note
+ * visualmente que esa columna se ha quedado fija. La fila de `filaTotales`
+ * (construida por cada pantalla, no por este componente) NO se ve afectada
+ * automáticamente por este cambio — cada pantalla que quiera esa misma
+ * columna fija en su fila de totales tiene que añadir esas mismas clases a
+ * su primera celda a mano (ver DashboardSellOutClientes.js para el ejemplo).
+ *
  * 1er intento (fallido): sticky respecto al contenedor de scroll de
  * Layout.js, con un offset para no chocar con la barra de migas. NO
  * funcionaba: el div que envuelve la tabla necesita `overflow-x-auto` para
@@ -89,6 +109,15 @@
 import React, { useState } from 'react';
 import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { thClasses, tdClasses, tdRightClasses } from './uiClasses';
+
+// Clases de la primera columna (fija/"congelada" al desplazar en horizontal
+// — ver comentario "PRIMERA COLUMNA FIJA" más arriba). z-[6] en la cabecera
+// (por encima de z-[5] del resto del <thead>, para que la esquina superior
+// izquierda — fija a la vez en horizontal Y en vertical — quede siempre por
+// encima de todo) y z-[2] en el cuerpo (por encima de las demás celdas del
+// cuerpo, que no tienen z-index propio).
+const COLUMNA_FIJA_TH = 'sticky left-0 z-[6] border-r border-slate-200 dark:border-slate-700';
+const COLUMNA_FIJA_TD = 'sticky left-0 z-[2] bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700';
 
 // Aplica un { col, dir } sobre un array de filas usando las mismas reglas de
 // comparación que el modo no controlado — para que una pantalla con
@@ -141,7 +170,7 @@ function TablaOrdenable({ columnas, filas, keyExtractor, claseFila, filaTotales,
             {columnas.map((c, i) => (
               <th
                 key={i}
-                className={`${thClasses}${c.valor ? ' cursor-pointer select-none hover:text-indigo-600 dark:hover:text-indigo-400' : ''}${c.claseCabecera ? ` ${c.claseCabecera}` : ''}`}
+                className={`${thClasses}${i === 0 ? ` ${COLUMNA_FIJA_TH}` : ''}${c.valor ? ' cursor-pointer select-none hover:text-indigo-600 dark:hover:text-indigo-400' : ''}${c.claseCabecera ? ` ${c.claseCabecera}` : ''}`}
                 onClick={c.valor ? () => alternarOrden(i) : undefined}
                 title={c.valor ? 'Ordenar por esta columna' : undefined}
               >
@@ -164,7 +193,7 @@ function TablaOrdenable({ columnas, filas, keyExtractor, claseFila, filaTotales,
               className={`${claseFila ? claseFila(f) : ''}${onFilaClick ? ' cursor-pointer' : ''}`}
               onClick={onFilaClick ? () => onFilaClick(f) : undefined}
             >
-              {columnas.map((c, j) => <td key={j} className={`${c.derecha ? tdRightClasses : tdClasses}${c.claseCelda ? ` ${c.claseCelda}` : ''}`}>{c.render(f)}</td>)}
+              {columnas.map((c, j) => <td key={j} className={`${c.derecha ? tdRightClasses : tdClasses}${j === 0 ? ` ${COLUMNA_FIJA_TD}` : ''}${c.claseCelda ? ` ${c.claseCelda}` : ''}`}>{c.render(f)}</td>)}
             </tr>
           ))}
           {filaTotales}

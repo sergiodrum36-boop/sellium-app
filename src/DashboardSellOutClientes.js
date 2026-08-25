@@ -462,7 +462,11 @@ function DashboardSellOutClientes({ idUsuario, listaDistribuidores, idDistribuid
   // el orden elegido en las demás filas — igual que antes de este cambio.
   const filaTotalesClientes = filasFiltradas.length > 0 ? (
     <tr className={trTotales}>
-      <td className={tdClasses}>TOTALES ({filasFiltradas.length})</td>
+      {/* Primera celda fija en horizontal, a juego con la columna "Cliente"
+          fijada por TablaOrdenable.js — mismo fondo que esta fila de
+          totales (bg-slate-50/dark:bg-slate-900, ver `trTotales` en
+          uiClasses.js) para que no se note el corte al desplazar. */}
+      <td className={`${tdClasses} sticky left-0 z-[2] bg-slate-50 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700`}>TOTALES ({filasFiltradas.length})</td>
       <td className={tdClasses}></td>
       <td className={tdClasses}></td>
       <td className={tdClasses}></td>
