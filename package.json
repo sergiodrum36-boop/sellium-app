@@ -41,6 +41,11 @@
     "test": "react-scripts test",
     "eject": "react-scripts eject"
   },
+  "jest": {
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(@fullcalendar|react-leaflet|@react-leaflet)/).+\\.(js|jsx|mjs|cjs|ts|tsx)$"
+    ]
+  },
   "eslintConfig": {
     "extends": [
       "react-app",
