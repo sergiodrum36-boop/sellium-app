@@ -17,7 +17,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { getPapelera, restaurarDePapelera, eliminarDefinitivamente } from './firebaseApi';
 import { auth } from './firebaseConfig';
-import { botonSecundario, botonPeligro, thClasses, tdClasses, tarjeta } from './uiClasses';
+import { botonSecundario, botonPeligro, tarjeta } from './uiClasses';
+import TablaOrdenable from './TablaOrdenable';
 
 const formateadorFecha = (iso) => {
   if (!iso) return '—';
@@ -31,6 +32,8 @@ const formateadorFecha = (iso) => {
 function Papelera({ idUsuario, marcas, listaDistribuidores }) {
   const [papeleraSellIn, setPapeleraSellIn] = useState([]);
   const [papeleraSellOut, setPapeleraSellOut] = useState([]);
+  const [papeleraSellOutClientesMovimientos, setPapeleraSellOutClientesMovimientos] = useState([]);
+  const [papeleraSellOutClientesMaestro, setPapeleraSellOutClientesMaestro] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [procesandoId, setProcesandoId] = useState(null);
 
@@ -38,17 +41,27 @@ function Papelera({ idUsuario, marcas, listaDistribuidores }) {
   const mapaDistribuidores = new Map(listaDistribuidores.map(d => [d.id, d.nombre_distribuidor]));
 
   const cargarPapelera = useCallback(async () => {
-    if (!idUsuario) { setPapeleraSellIn([]); setPapeleraSellOut([]); return; }
+    if (!idUsuario) {
+      setPapeleraSellIn([]); setPapeleraSellOut([]);
+      setPapeleraSellOutClientesMovimientos([]); setPapeleraSellOutClientesMaestro([]);
+      return;
+    }
     setCargando(true);
     try {
-      const [sellIn, sellOut] = await Promise.all([
+      const [sellIn, sellOut, sellOutClientesMov, sellOutClientesMaestro] = await Promise.all([
         getPapelera(idUsuario, 'historicoSellIn'),
-        getPapelera(idUsuario, 'historicoSellOut')
+        getPapelera(idUsuario, 'historicoSellOut'),
+        getPapelera(idUsuario, 'movimientosSellOutClientes'),
+        getPapelera(idUsuario, 'clientesSellOut')
       ]);
       sellIn.sort((a, b) => (b.eliminado_en || '').localeCompare(a.eliminado_en || ''));
       sellOut.sort((a, b) => (b.eliminado_en || '').localeCompare(a.eliminado_en || ''));
+      sellOutClientesMov.sort((a, b) => (b.eliminado_en || '').localeCompare(a.eliminado_en || ''));
+      sellOutClientesMaestro.sort((a, b) => (b.eliminado_en || '').localeCompare(a.eliminado_en || ''));
       setPapeleraSellIn(sellIn);
       setPapeleraSellOut(sellOut);
+      setPapeleraSellOutClientesMovimientos(sellOutClientesMov);
+      setPapeleraSellOutClientesMaestro(sellOutClientesMaestro);
     } catch (error) {
       console.error('Error cargando la papelera:', error);
       alert('Error al cargar la papelera: ' + error.message);
@@ -97,62 +110,97 @@ function Papelera({ idUsuario, marcas, listaDistribuidores }) {
     setProcesandoId(null);
   };
 
+  const ETIQUETA_RESUMEN = {
+    historicoSellIn: 'Sell-In',
+    historicoSellOut: 'Sell-Out',
+    movimientosSellOutClientes: 'Sell-Out Cliente'
+  };
+
   const renderTabla = (titulo, filas, collectionName, columnas) => (
     <div className={`${tarjeta} mb-5`}>
       <h4 className="text-sm font-medium text-slate-900 dark:text-white mb-3">{titulo} ({filas.length})</h4>
       {filas.length === 0 ? (
         <p className="text-sm text-slate-500 dark:text-slate-400">No hay registros en la papelera.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-          <table className="w-full border-collapse text-xs">
-            <thead>
-              <tr>
-                <th className={thClasses}>Mes/Año</th>
-                <th className={thClasses}>Distribuidor</th>
-                <th className={thClasses}>Marca</th>
-                {columnas.map(c => <th key={c.label} className={thClasses}>{c.label}</th>)}
-                <th className={thClasses}>Eliminado</th>
-                <th className={thClasses}>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filas.map(item => {
-                const nombreMarca = mapaMarcas.get(item.id_marca) || 'Marca desconocida';
-                const nombreDistribuidor = mapaDistribuidores.get(item.id_distribuidor) || 'Distribuidor desconocido';
-                const resumen = `${collectionName === 'historicoSellIn' ? 'Sell-In' : 'Sell-Out'}: ${nombreMarca} · ${item.mes_ano}`;
-                const procesando = procesandoId === item.id;
-                return (
-                  <tr key={item.id}>
-                    <td className={tdClasses}>{item.mes_ano}</td>
-                    <td className={`${tdClasses} font-semibold`}>{nombreDistribuidor}</td>
-                    <td className={tdClasses}>{nombreMarca}</td>
-                    {columnas.map(c => (
-                      <td key={c.label} className={tdClasses}>{c.render(item)}</td>
-                    ))}
-                    <td className={tdClasses}>{formateadorFecha(item.eliminado_en)}</td>
-                    <td className={`${tdClasses} whitespace-nowrap`}>
-                      <div className="flex gap-2">
-                        <button
-                          className={botonSecundario}
-                          disabled={procesando}
-                          onClick={() => handleRestaurar(collectionName, item, resumen)}
-                        >
-                          Restaurar
-                        </button>
-                        <button
-                          className={botonPeligro}
-                          disabled={procesando}
-                          onClick={() => handleEliminarDefinitivo(collectionName, item, resumen)}
-                        >
-                          Eliminar def.
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+          <TablaOrdenable
+            filas={filas}
+            keyExtractor={item => item.id}
+            columnas={[
+              { titulo: 'Mes/Año', valor: item => item.mes_ano || '', render: item => item.mes_ano },
+              {
+                titulo: 'Distribuidor',
+                valor: item => mapaDistribuidores.get(item.id_distribuidor) || '',
+                render: item => <span className="font-semibold">{mapaDistribuidores.get(item.id_distribuidor) || 'Distribuidor desconocido'}</span>,
+              },
+              { titulo: 'Marca', valor: item => mapaMarcas.get(item.id_marca) || '', render: item => mapaMarcas.get(item.id_marca) || 'Marca desconocida' },
+              ...columnas.map(c => ({ titulo: c.label, render: c.render })),
+              { titulo: 'Eliminado', valor: item => item.eliminado_en || '', render: item => formateadorFecha(item.eliminado_en) },
+              {
+                titulo: 'Acciones',
+                claseCelda: 'whitespace-nowrap',
+                render: (item) => {
+                  const nombreMarca = mapaMarcas.get(item.id_marca) || 'Marca desconocida';
+                  const resumen = `${ETIQUETA_RESUMEN[collectionName] || collectionName}: ${nombreMarca} · ${item.mes_ano}`;
+                  const procesando = procesandoId === item.id;
+                  return (
+                    <div className="flex gap-2">
+                      <button className={botonSecundario} disabled={procesando} onClick={() => handleRestaurar(collectionName, item, resumen)}>
+                        Restaurar
+                      </button>
+                      <button className={botonPeligro} disabled={procesando} onClick={() => handleEliminarDefinitivo(collectionName, item, resumen)}>
+                        Eliminar def.
+                      </button>
+                    </div>
+                  );
+                },
+              },
+            ]}
+          />
+        </div>
+      )}
+    </div>
+  );
+
+  // Tabla del maestro de clientes finales (clientesSellOut) — no tiene
+  // mes_ano ni id_marca (esos atributos viven en los MOVIMIENTOS, ver
+  // firebaseApi.js sección 21), así que usa un layout de columnas distinto
+  // en vez de reutilizar renderTabla.
+  const renderTablaClientesMaestro = (filas) => (
+    <div className={`${tarjeta} mb-5`}>
+      <h4 className="text-sm font-medium text-slate-900 dark:text-white mb-3">Clientes finales (maestro Sell-Out por Cliente) ({filas.length})</h4>
+      {filas.length === 0 ? (
+        <p className="text-sm text-slate-500 dark:text-slate-400">No hay registros en la papelera.</p>
+      ) : (
+        <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+          <TablaOrdenable
+            filas={filas}
+            keyExtractor={item => item.id}
+            columnas={[
+              { titulo: 'Cliente', valor: item => item.nombre_cliente || '', render: item => <span className="font-semibold">{item.nombre_cliente}</span> },
+              { titulo: 'Distribuidor', valor: item => mapaDistribuidores.get(item.id_distribuidor) || '', render: item => mapaDistribuidores.get(item.id_distribuidor) || 'Distribuidor desconocido' },
+              { titulo: 'Cód./NIF', valor: item => item.cod_cliente_origen || item.nif_cif || '', render: item => item.cod_cliente_origen || item.nif_cif || '—' },
+              { titulo: 'Eliminado', valor: item => item.eliminado_en || '', render: item => formateadorFecha(item.eliminado_en) },
+              {
+                titulo: 'Acciones',
+                claseCelda: 'whitespace-nowrap',
+                render: (item) => {
+                  const resumen = `Sell-Out Cliente (maestro): ${item.nombre_cliente}`;
+                  const procesando = procesandoId === item.id;
+                  return (
+                    <div className="flex gap-2">
+                      <button className={botonSecundario} disabled={procesando} onClick={() => handleRestaurar('clientesSellOut', item, resumen)}>
+                        Restaurar
+                      </button>
+                      <button className={botonPeligro} disabled={procesando} onClick={() => handleEliminarDefinitivo('clientesSellOut', item, resumen)}>
+                        Eliminar def.
+                      </button>
+                    </div>
+                  );
+                },
+              },
+            ]}
+          />
         </div>
       )}
     </div>
@@ -178,6 +226,13 @@ function Papelera({ idUsuario, marcas, listaDistribuidores }) {
         { label: 'Ventas (uds)', render: (i) => Math.round(i.ventas_uds || 0) },
         { label: 'Ventas (€)', render: (i) => (i.ventas_euros || 0).toFixed(2) }
       ])}
+
+      {renderTabla('Sell-Out por Cliente Final (movimientos)', papeleraSellOutClientesMovimientos, 'movimientosSellOutClientes', [
+        { label: 'Cliente', render: (i) => i.nombre_cliente || '—' },
+        { label: 'Uds. totales', render: (i) => Math.round(i.uds_totales || 0) }
+      ])}
+
+      {renderTablaClientesMaestro(papeleraSellOutClientesMaestro)}
     </div>
   );
 }

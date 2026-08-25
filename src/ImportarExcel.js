@@ -25,7 +25,8 @@ import {
   saveStockInicialImportado,
   deleteStockInicialPorDistribuidorYAnio
 } from './firebaseApi';
-import { inputClasses, botonExito, botonSecundario, botonPrimario, tarjeta, thClasses, tdClasses } from './uiClasses';
+import { inputClasses, botonExito, botonSecundario, botonPrimario, tarjeta } from './uiClasses';
+import TablaOrdenable from './TablaOrdenable';
 
 const formateadorMoneda = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 const norm = (s) => String(s || '').trim().toUpperCase();
@@ -451,65 +452,48 @@ function ImportarExcel({ idUsuario, marcas, listaDistribuidores, onImportComplet
               Si una marca del Excel se parece mucho a una que ya tienes (pero escrita distinto),
               te lo sugerimos aquí para que NO se cree duplicada — pero la decisión final es tuya.
             </p>
-            <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-              <table className="w-full border-collapse text-xs">
-                <thead>
-                  <tr>
-                    <th className={thClasses}>Marca (Excel)</th>
-                    <th className={thClasses}>Precio</th>
-                    <th className={thClasses}>A&P/ud</th>
-                    <th className={thClasses}>Decisión</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {resultado.marcas.map(m => {
-                    const yaExiste = mapaMarcasExistentes.has(norm(m.nombre_marca));
-                    if (yaExiste) {
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+              <TablaOrdenable
+                filas={resultado.marcas}
+                keyExtractor={m => m.nombre_marca}
+                columnas={[
+                  { titulo: 'Marca (Excel)', valor: m => m.nombre_marca, render: m => m.nombre_marca },
+                  { titulo: 'Precio', derecha: true, valor: m => m.Coste_Unidad || 0, render: m => formateadorMoneda.format(m.Coste_Unidad) },
+                  { titulo: 'A&P/ud', derecha: true, valor: m => m.AP_Generado_Por_Unidad || 0, render: m => formateadorMoneda.format(m.AP_Generado_Por_Unidad) },
+                  {
+                    titulo: 'Decisión', render: m => {
+                      const yaExiste = mapaMarcasExistentes.has(norm(m.nombre_marca));
+                      if (yaExiste) {
+                        return <span className="text-emerald-600 dark:text-emerald-400">Ya existe (nombre idéntico)</span>;
+                      }
+                      const candidatas = encontrarSimilares(m.nombre_marca, marcas || [], 0.5);
+                      const decision = decisionMarca[m.nombre_marca] || { accion: 'crear', idExistente: null };
                       return (
-                        <tr key={m.nombre_marca}>
-                          <td className={tdClasses}>{m.nombre_marca}</td>
-                          <td className={`${tdClasses} text-right tabular-nums`}>{formateadorMoneda.format(m.Coste_Unidad)}</td>
-                          <td className={`${tdClasses} text-right tabular-nums`}>{formateadorMoneda.format(m.AP_Generado_Por_Unidad)}</td>
-                          <td className={tdClasses}><span className="text-emerald-600 dark:text-emerald-400">Ya existe (nombre idéntico)</span></td>
-                        </tr>
+                        <select
+                          value={decision.accion === 'usar_existente' ? `usar:${decision.idExistente}` : decision.accion}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val === 'crear' || val === 'omitir') {
+                              setDecisionMarca(prev => ({ ...prev, [m.nombre_marca]: { accion: val, idExistente: null } }));
+                            } else if (val.startsWith('usar:')) {
+                              setDecisionMarca(prev => ({ ...prev, [m.nombre_marca]: { accion: 'usar_existente', idExistente: val.slice(5) } }));
+                            }
+                          }}
+                          className={`${inputClasses} max-w-xs`}
+                        >
+                          <option value="crear">Crear como marca nueva</option>
+                          {candidatas.map(c => (
+                            <option key={c.marca.id} value={`usar:${c.marca.id}`}>
+                              Es la misma que "{c.marca.nombre_marca}" ({Math.round(c.score * 100)}% parecido)
+                            </option>
+                          ))}
+                          <option value="omitir">Omitir esta referencia (no importar)</option>
+                        </select>
                       );
-                    }
-
-                    const candidatas = encontrarSimilares(m.nombre_marca, marcas || [], 0.5);
-                    const decision = decisionMarca[m.nombre_marca] || { accion: 'crear', idExistente: null };
-
-                    return (
-                      <tr key={m.nombre_marca}>
-                        <td className={tdClasses}>{m.nombre_marca}</td>
-                        <td className={`${tdClasses} text-right tabular-nums`}>{formateadorMoneda.format(m.Coste_Unidad)}</td>
-                        <td className={`${tdClasses} text-right tabular-nums`}>{formateadorMoneda.format(m.AP_Generado_Por_Unidad)}</td>
-                        <td className={tdClasses}>
-                          <select
-                            value={decision.accion === 'usar_existente' ? `usar:${decision.idExistente}` : decision.accion}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              if (val === 'crear' || val === 'omitir') {
-                                setDecisionMarca(prev => ({ ...prev, [m.nombre_marca]: { accion: val, idExistente: null } }));
-                              } else if (val.startsWith('usar:')) {
-                                setDecisionMarca(prev => ({ ...prev, [m.nombre_marca]: { accion: 'usar_existente', idExistente: val.slice(5) } }));
-                              }
-                            }}
-                            className={`${inputClasses} max-w-xs`}
-                          >
-                            <option value="crear">Crear como marca nueva</option>
-                            {candidatas.map(c => (
-                              <option key={c.marca.id} value={`usar:${c.marca.id}`}>
-                                Es la misma que "{c.marca.nombre_marca}" ({Math.round(c.score * 100)}% parecido)
-                              </option>
-                            ))}
-                            <option value="omitir">Omitir esta referencia (no importar)</option>
-                          </select>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                    },
+                  },
+                ]}
+              />
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
               {totalMarcasNuevasSeleccionadas} marca(s) nueva(s) se crearán · {totalMarcasReutilizadas} referencia(s) se vincularán a marcas ya existentes.
@@ -551,42 +535,30 @@ function ImportarExcel({ idUsuario, marcas, listaDistribuidores, onImportComplet
           {/* 3. MESES */}
           <div className={`${tarjeta} mb-4`}>
             <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">3. Meses a importar ({mesesUnicos.length})</h4>
-            <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-              <table className="w-full border-collapse text-xs">
-                <thead>
-                  <tr>
-                    <th className={thClasses}>Mes</th>
-                    <th className={thClasses}>Filas Sell-In</th>
-                    <th className={thClasses}>Filas Sell-Out</th>
-                    <th className={thClasses}>Estado / Decisión</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mesesUnicos.map(mes => {
-                    const filasIn = comprasAjustadas.filter(c => c.mes_ano === mes).length;
-                    const filasOut = ventasAjustadas.filter(v => v.mes_ano === mes).length;
-                    const conflicto = conflictoDeMes(mes);
-                    const decision = decisionParaMes(mes);
-                    return (
-                      <tr key={mes}>
-                        <td className={tdClasses}>{mes}</td>
-                        <td className={`${tdClasses} text-right tabular-nums`}>{filasIn}</td>
-                        <td className={`${tdClasses} text-right tabular-nums`}>{filasOut}</td>
-                        <td className={tdClasses}>
-                          {!conflicto ? (
-                            <span className="text-emerald-600 dark:text-emerald-400">Nuevo — se importará</span>
-                          ) : (
-                            <select value={decision} onChange={(e) => setDecisionMes(mes, e.target.value)} className={inputClasses}>
-                              <option value="omitir">Ya existe — Omitir (no tocar)</option>
-                              <option value="sobrescribir">Ya existe — Sobrescribir</option>
-                            </select>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+              <TablaOrdenable
+                filas={mesesUnicos}
+                keyExtractor={mes => mes}
+                columnas={[
+                  { titulo: 'Mes', valor: mes => mes, render: mes => mes },
+                  { titulo: 'Filas Sell-In', derecha: true, valor: mes => comprasAjustadas.filter(c => c.mes_ano === mes).length, render: mes => comprasAjustadas.filter(c => c.mes_ano === mes).length },
+                  { titulo: 'Filas Sell-Out', derecha: true, valor: mes => ventasAjustadas.filter(v => v.mes_ano === mes).length, render: mes => ventasAjustadas.filter(v => v.mes_ano === mes).length },
+                  {
+                    titulo: 'Estado / Decisión', render: mes => {
+                      const conflicto = conflictoDeMes(mes);
+                      const decision = decisionParaMes(mes);
+                      return !conflicto ? (
+                        <span className="text-emerald-600 dark:text-emerald-400">Nuevo — se importará</span>
+                      ) : (
+                        <select value={decision} onChange={(e) => setDecisionMes(mes, e.target.value)} className={inputClasses}>
+                          <option value="omitir">Ya existe — Omitir (no tocar)</option>
+                          <option value="sobrescribir">Ya existe — Sobrescribir</option>
+                        </select>
+                      );
+                    },
+                  },
+                ]}
+              />
             </div>
           </div>
 

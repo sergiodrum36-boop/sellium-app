@@ -17,6 +17,17 @@
  * colorPorSigno de uiClasses.js (la misma función que ya usan ControlAP.js
  * y ControlAPVisionComercial.js), para que el rojo/verde sea exactamente el
  * mismo en toda la app.
+ *
+ * CAMBIO (Fase 8 — "salto de calidad visual", especificación Sergio: "KPIs
+ * más compactos, estilo Power BI; icono en color corporativo, no varios
+ * colores sin patrón claro"): el fondo oscuro pasa de un tono propio
+ * (#151822) al tono "Cards" exacto de su especificación (#1E293B, que ya es
+ * slate-800 de Tailwind — se usa la clase, no el hex suelto, para que
+ * quede consistente con el resto de tarjetas de la app). Padding y tamaño
+ * de valor reducidos (menos altura), y el neutro ya no usa el dorado
+ * ("gold") sino el color corporativo (indigo), para que el único acento de
+ * color en un KPI sea siempre el mismo salvo que el dato sea positivo/
+ * negativo (verde/rojo).
  */
 
 import { TrendingUp, TrendingDown } from 'lucide-react';
@@ -26,14 +37,14 @@ export default function KpiCard({ label, value, deltaLabel, deltaType = 'neutral
   const deltaClasses = {
     positive: `${colorPorSigno(1)} bg-emerald-50 dark:bg-emerald-400/10`,
     negative: `${colorPorSigno(-1)} bg-red-50 dark:bg-red-400/10`,
-    neutral: 'text-gold bg-gold-soft',
+    neutral: 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/10',
   };
   return (
-    <div className="rounded-xl bg-white dark:bg-[#151822] shadow-card-light dark:shadow-card p-5">
-      <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-2">{label}</div>
-      <div className="font-extrabold text-[32px] leading-none tracking-tight tabular-nums text-slate-900 dark:text-white">{value}</div>
+    <div className="rounded-2xl bg-white dark:bg-slate-800 shadow-soft p-4">
+      <div className="text-[11px] font-bold uppercase tracking-wide text-slate-400 dark:text-slate-500 mb-1.5">{label}</div>
+      <div className="font-semibold text-[26px] leading-none tracking-tight tabular-nums text-slate-900 dark:text-white">{value}</div>
       {(deltaLabel || spark) && (
-        <div className="flex items-center justify-between mt-4">
+        <div className="flex items-center justify-between mt-3">
           {deltaLabel && (
             <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-full ${deltaClasses[deltaType]}`}>
               {deltaType === 'positive' && <TrendingUp size={12} />}

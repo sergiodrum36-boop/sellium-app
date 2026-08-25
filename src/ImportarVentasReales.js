@@ -32,7 +32,8 @@ import {
   saveMapeoImportacion,
   deleteMapeoImportacion
 } from './firebaseApi';
-import { inputClasses, botonExito, botonSecundario, botonPrimario, tarjeta, thClasses, tdClasses } from './uiClasses';
+import { inputClasses, botonExito, botonSecundario, botonPrimario, tarjeta } from './uiClasses';
+import TablaOrdenable from './TablaOrdenable';
 import SelectorMesAno from './SelectorMesAno';
 
 const norm = (s) => String(s || '').trim().toUpperCase();
@@ -406,64 +407,66 @@ function ImportarVentasReales({ idUsuario, listaDistribuidores, marcasGlobales, 
                   Si un distribuidor del Excel se parece a uno ya existente (pero escrito distinto), te lo sugerimos aquí.
                   Los marcados como <strong>🔁 recordado</strong> ya se resolvieron en una importación anterior y no hace falta tocarlos.
                 </p>
-                <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-                  <table className="w-full border-collapse text-xs">
-                    <thead>
-                      <tr>
-                        <th className={thClasses}>Distribuidor (Excel)</th>
-                        <th className={thClasses}>Filas</th>
-                        <th className={thClasses}>Decisión</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {distribuidoresExcel.map(nombreExcel => {
-                        const decision = decisionDistribuidor[nombreExcel] || { accion: 'crear', idExistente: null };
-                        const numFilas = resultado.filas.filter(f => f.distribuidor === nombreExcel).length;
-                        const candidatas = encontrarDistribuidoresSimilares(nombreExcel, listaDistribuidores, 0.5);
-                        const esRecordado = nombresRecordados.has(`distribuidor::${nombreExcel}`);
-                        return (
-                          <tr key={nombreExcel}>
-                            <td className={tdClasses}>
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+                  <TablaOrdenable
+                    filas={distribuidoresExcel}
+                    keyExtractor={nombreExcel => nombreExcel}
+                    columnas={[
+                      {
+                        titulo: 'Distribuidor (Excel)', valor: nombreExcel => nombreExcel, render: nombreExcel => {
+                          const esRecordado = nombresRecordados.has(`distribuidor::${nombreExcel}`);
+                          return (
+                            <>
                               {nombreExcel}
                               {esRecordado && (
                                 <span className="ml-2 inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300" title="Se ha rellenado solo, recordado de una importación anterior">
                                   🔁 recordado
                                 </span>
                               )}
-                            </td>
-                            <td className={`${tdClasses} text-right tabular-nums`}>{numFilas}</td>
-                            <td className={tdClasses}>
-                              <select
-                                value={decision.accion === 'usar_existente' ? `usar:${decision.idExistente}` : decision.accion}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val === 'crear' || val === 'omitir') {
-                                    setDecisionDistribuidor(prev => ({ ...prev, [nombreExcel]: { accion: val, idExistente: null } }));
-                                  } else if (val.startsWith('usar:')) {
-                                    setDecisionDistribuidor(prev => ({ ...prev, [nombreExcel]: { accion: 'usar_existente', idExistente: val.slice(5) } }));
-                                  }
-                                }}
-                                className={`${inputClasses} max-w-xs`}
-                              >
-                                <option value="crear">Crear como distribuidor nuevo</option>
-                                {candidatas.map(c => (
-                                  <option key={c.distribuidor.id} value={`usar:${c.distribuidor.id}`}>
-                                    Es el mismo que "{c.distribuidor.nombre_distribuidor}" ({Math.round(c.score * 100)}% parecido)
-                                  </option>
+                            </>
+                          );
+                        },
+                      },
+                      {
+                        titulo: 'Filas', derecha: true,
+                        valor: nombreExcel => resultado.filas.filter(f => f.distribuidor === nombreExcel).length,
+                        render: nombreExcel => resultado.filas.filter(f => f.distribuidor === nombreExcel).length,
+                      },
+                      {
+                        titulo: 'Decisión', render: nombreExcel => {
+                          const decision = decisionDistribuidor[nombreExcel] || { accion: 'crear', idExistente: null };
+                          const candidatas = encontrarDistribuidoresSimilares(nombreExcel, listaDistribuidores, 0.5);
+                          return (
+                            <select
+                              value={decision.accion === 'usar_existente' ? `usar:${decision.idExistente}` : decision.accion}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === 'crear' || val === 'omitir') {
+                                  setDecisionDistribuidor(prev => ({ ...prev, [nombreExcel]: { accion: val, idExistente: null } }));
+                                } else if (val.startsWith('usar:')) {
+                                  setDecisionDistribuidor(prev => ({ ...prev, [nombreExcel]: { accion: 'usar_existente', idExistente: val.slice(5) } }));
+                                }
+                              }}
+                              className={`${inputClasses} max-w-xs`}
+                            >
+                              <option value="crear">Crear como distribuidor nuevo</option>
+                              {candidatas.map(c => (
+                                <option key={c.distribuidor.id} value={`usar:${c.distribuidor.id}`}>
+                                  Es el mismo que "{c.distribuidor.nombre_distribuidor}" ({Math.round(c.score * 100)}% parecido)
+                                </option>
+                              ))}
+                              {(listaDistribuidores || [])
+                                .filter(d => !candidatas.some(c => c.distribuidor.id === d.id))
+                                .map(d => (
+                                  <option key={d.id} value={`usar:${d.id}`}>Usar: {d.nombre_distribuidor}</option>
                                 ))}
-                                {(listaDistribuidores || [])
-                                  .filter(d => !candidatas.some(c => c.distribuidor.id === d.id))
-                                  .map(d => (
-                                    <option key={d.id} value={`usar:${d.id}`}>Usar: {d.nombre_distribuidor}</option>
-                                  ))}
-                                <option value="omitir">Omitir este distribuidor (no importar)</option>
-                              </select>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                              <option value="omitir">Omitir este distribuidor (no importar)</option>
+                            </select>
+                          );
+                        },
+                      },
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -474,66 +477,74 @@ function ImportarVentasReales({ idUsuario, listaDistribuidores, marcasGlobales, 
                   Cada "Subfamilia" del Excel se trata como una Marca de la app. La "Familia" detectada se guarda junto a cada movimiento.
                   Los marcados como <strong>🔁 recordado</strong> ya se resolvieron en una importación anterior y no hace falta tocarlos.
                 </p>
-                <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-                  <table className="w-full border-collapse text-xs">
-                    <thead>
-                      <tr>
-                        <th className={thClasses}>Subfamilia (Excel)</th>
-                        <th className={thClasses}>Familia</th>
-                        <th className={thClasses}>Filas</th>
-                        <th className={thClasses}>Decisión</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {subfamiliasExcel.map(subfamilia => {
-                        const decision = decisionMarca[subfamilia] || { accion: 'crear', idExistente: null, familia: '' };
-                        const numFilas = resultado.filas.filter(f => f.subfamilia === subfamilia).length;
-                        const candidatas = encontrarSimilares(subfamilia, marcasGlobales || [], 0.5);
-                        const esRecordada = nombresRecordados.has(`marca::${subfamilia}`);
-                        return (
-                          <tr key={subfamilia}>
-                            <td className={tdClasses}>
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+                  <TablaOrdenable
+                    filas={subfamiliasExcel}
+                    keyExtractor={subfamilia => subfamilia}
+                    columnas={[
+                      {
+                        titulo: 'Subfamilia (Excel)', valor: subfamilia => subfamilia, render: subfamilia => {
+                          const esRecordada = nombresRecordados.has(`marca::${subfamilia}`);
+                          return (
+                            <>
                               {subfamilia}
                               {esRecordada && (
                                 <span className="ml-2 inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300" title="Se ha rellenado sola, recordada de una importación anterior">
                                   🔁 recordado
                                 </span>
                               )}
-                            </td>
-                            <td className={tdClasses}>{decision.familia || <span className="text-slate-400">—</span>}</td>
-                            <td className={`${tdClasses} text-right tabular-nums`}>{numFilas}</td>
-                            <td className={tdClasses}>
-                              <select
-                                value={decision.accion === 'usar_existente' ? `usar:${decision.idExistente}` : decision.accion}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (val === 'crear' || val === 'omitir') {
-                                    setDecisionMarca(prev => ({ ...prev, [subfamilia]: { ...prev[subfamilia], accion: val, idExistente: null } }));
-                                  } else if (val.startsWith('usar:')) {
-                                    setDecisionMarca(prev => ({ ...prev, [subfamilia]: { ...prev[subfamilia], accion: 'usar_existente', idExistente: val.slice(5) } }));
-                                  }
-                                }}
-                                className={`${inputClasses} max-w-xs`}
-                              >
-                                <option value="crear">Crear como marca nueva</option>
-                                {candidatas.map(c => (
-                                  <option key={c.marca.id} value={`usar:${c.marca.id}`}>
-                                    Es la misma que "{c.marca.nombre_marca}" ({Math.round(c.score * 100)}% parecido)
-                                  </option>
+                            </>
+                          );
+                        },
+                      },
+                      {
+                        titulo: 'Familia',
+                        valor: subfamilia => (decisionMarca[subfamilia] || {}).familia || '',
+                        render: subfamilia => {
+                          const decision = decisionMarca[subfamilia] || { accion: 'crear', idExistente: null, familia: '' };
+                          return decision.familia || <span className="text-slate-400">—</span>;
+                        },
+                      },
+                      {
+                        titulo: 'Filas', derecha: true,
+                        valor: subfamilia => resultado.filas.filter(f => f.subfamilia === subfamilia).length,
+                        render: subfamilia => resultado.filas.filter(f => f.subfamilia === subfamilia).length,
+                      },
+                      {
+                        titulo: 'Decisión', render: subfamilia => {
+                          const decision = decisionMarca[subfamilia] || { accion: 'crear', idExistente: null, familia: '' };
+                          const candidatas = encontrarSimilares(subfamilia, marcasGlobales || [], 0.5);
+                          return (
+                            <select
+                              value={decision.accion === 'usar_existente' ? `usar:${decision.idExistente}` : decision.accion}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === 'crear' || val === 'omitir') {
+                                  setDecisionMarca(prev => ({ ...prev, [subfamilia]: { ...prev[subfamilia], accion: val, idExistente: null } }));
+                                } else if (val.startsWith('usar:')) {
+                                  setDecisionMarca(prev => ({ ...prev, [subfamilia]: { ...prev[subfamilia], accion: 'usar_existente', idExistente: val.slice(5) } }));
+                                }
+                              }}
+                              className={`${inputClasses} max-w-xs`}
+                            >
+                              <option value="crear">Crear como marca nueva</option>
+                              {candidatas.map(c => (
+                                <option key={c.marca.id} value={`usar:${c.marca.id}`}>
+                                  Es la misma que "{c.marca.nombre_marca}" ({Math.round(c.score * 100)}% parecido)
+                                </option>
+                              ))}
+                              {(marcasGlobales || [])
+                                .filter(m => !candidatas.some(c => c.marca.id === m.id))
+                                .map(m => (
+                                  <option key={m.id} value={`usar:${m.id}`}>Usar: {m.nombre_marca}</option>
                                 ))}
-                                {(marcasGlobales || [])
-                                  .filter(m => !candidatas.some(c => c.marca.id === m.id))
-                                  .map(m => (
-                                    <option key={m.id} value={`usar:${m.id}`}>Usar: {m.nombre_marca}</option>
-                                  ))}
-                                <option value="omitir">Omitir esta subfamilia (no importar)</option>
-                              </select>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                              <option value="omitir">Omitir esta subfamilia (no importar)</option>
+                            </select>
+                          );
+                        },
+                      },
+                    ]}
+                  />
                 </div>
               </div>
 
@@ -544,32 +555,26 @@ function ImportarVentasReales({ idUsuario, listaDistribuidores, marcasGlobales, 
                   <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
                     Estos distribuidores ya tienen ventas reales guardadas para el mes elegido. Decide si sobrescribir (borra lo anterior y guarda lo nuevo) u omitir (mantiene lo ya guardado).
                   </p>
-                  <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-                    <table className="w-full border-collapse text-xs">
-                      <thead>
-                        <tr>
-                          <th className={thClasses}>Distribuidor</th>
-                          <th className={thClasses}>Decisión</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {distribuidoresConConflicto.map(nombreExcel => (
-                          <tr key={nombreExcel}>
-                            <td className={tdClasses}>{nombreExcel}</td>
-                            <td className={tdClasses}>
-                              <select
-                                value={decisionConflicto[nombreExcel] || 'omitir'}
-                                onChange={(e) => setDecisionConflicto(prev => ({ ...prev, [nombreExcel]: e.target.value }))}
-                                className={inputClasses}
-                              >
-                                <option value="omitir">Ya existe — Omitir (no tocar)</option>
-                                <option value="sobrescribir">Ya existe — Sobrescribir</option>
-                              </select>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+                    <TablaOrdenable
+                      filas={distribuidoresConConflicto}
+                      keyExtractor={nombreExcel => nombreExcel}
+                      columnas={[
+                        { titulo: 'Distribuidor', valor: nombreExcel => nombreExcel, render: nombreExcel => nombreExcel },
+                        {
+                          titulo: 'Decisión', render: nombreExcel => (
+                            <select
+                              value={decisionConflicto[nombreExcel] || 'omitir'}
+                              onChange={(e) => setDecisionConflicto(prev => ({ ...prev, [nombreExcel]: e.target.value }))}
+                              className={inputClasses}
+                            >
+                              <option value="omitir">Ya existe — Omitir (no tocar)</option>
+                              <option value="sobrescribir">Ya existe — Sobrescribir</option>
+                            </select>
+                          ),
+                        },
+                      ]}
+                    />
                   </div>
                 </div>
               )}

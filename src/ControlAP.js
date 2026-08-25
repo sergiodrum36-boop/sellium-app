@@ -22,8 +22,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { ChevronDown } from 'lucide-react';
 import { valorRegaladas, valorMuestras, valorAcuerdo, valorAportacionManual } from './calculosAP';
-import { inputClasses, botonSecundario, botonExito, etiqueta, filtroContenedor, thClasses, tdClasses, tdRightClasses, trTotales, kpiCard, kpiTitulo, kpiValor, colorPorSigno } from './uiClasses';
+import { inputClasses, botonSecundario, botonExito, etiqueta, filtroContenedor, tdClasses, tdRightClasses, trTotales, kpiCard, kpiTitulo, kpiValor, colorPorSigno } from './uiClasses';
 import SelectorMesAno from './SelectorMesAno';
+import TablaOrdenable from './TablaOrdenable';
 
 const formateadorMoneda = new Intl.NumberFormat('es-ES', {
   style: 'currency',
@@ -317,61 +318,39 @@ function ControlAP({ idDistribuidor, marcas, listaDistribuidores, historicoSellI
             </button>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-            <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr>
-                  <th className={thClasses}>Marca</th>
-                  <th className={thClasses}>Uds Vendidas</th>
-                  <th className={thClasses}>Uds Regaladas</th>
-                  <th className={thClasses}>Muestras</th>
-                  <th className={thClasses}>Aportación (€)</th>
-                  <th className={thClasses}>A&P GENERADO (€)</th>
-                  <th className={thClasses}>A&P GASTADO (€)</th>
-                  <th className={thClasses}>DIFERENCIA (€)</th>
-                  <th className={thClasses}>MEDIA GASTO X UNID. MOVIDA (€)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detallePorMarca.length > 0 ? (
-                  detallePorMarca.map(fila => (
-                    <tr key={fila.id_marca}>
-                      <td className={`${tdClasses} font-semibold`}>{fila.nombre_marca}</td>
-                      <td className={`${tdRightClasses} ${colorPorSigno(fila.ventas_uds)}`}>{Math.round(fila.ventas_uds)}</td>
-                      <td className={`${tdRightClasses} ${colorPorSigno(fila.regaladas_uds)}`}>{Math.round(fila.regaladas_uds)}</td>
-                      <td className={`${tdRightClasses} ${colorPorSigno(fila.muestras_uds)}`}>{Math.round(fila.muestras_uds)}</td>
-                      <td className={`${tdRightClasses} ${colorPorSigno(fila.aportacion_euros)}`}>{formateadorMoneda.format(fila.aportacion_euros)}</td>
-                      <td className={`${tdRightClasses} ${colorPorSigno(fila.ap_generado)}`}>{formateadorMoneda.format(fila.ap_generado)}</td>
-                      <td className={`${tdRightClasses} ${colorPorSigno(fila.ap_gastado)}`}>{formateadorMoneda.format(fila.ap_gastado)}</td>
-                      <td className={`${tdRightClasses} font-semibold ${colorPorSigno(fila.diferencia)}`}>
-                        {formateadorMoneda.format(fila.diferencia)}
-                      </td>
-                      <td className={`${tdRightClasses} ${colorPorSigno(fila.media_gasto_por_unidad)}`}>{formateadorMoneda.format(fila.media_gasto_por_unidad)}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="9" className={`${tdClasses} text-center py-5`}>
-                      No hay movimientos de A&P para los filtros seleccionados.
-                    </td>
+          <div className="rounded-lg border border-slate-200 dark:border-slate-800">
+            {detallePorMarca.length === 0 ? (
+              <p className={`${tdClasses} text-center py-5`}>No hay movimientos de A&P para los filtros seleccionados.</p>
+            ) : (
+              <TablaOrdenable
+                filas={detallePorMarca}
+                keyExtractor={fila => fila.id_marca}
+                columnas={[
+                  { titulo: 'Marca', valor: fila => fila.nombre_marca, render: fila => <span className="font-semibold">{fila.nombre_marca}</span> },
+                  { titulo: 'Uds Vendidas', derecha: true, valor: fila => fila.ventas_uds, render: fila => <span className={colorPorSigno(fila.ventas_uds)}>{Math.round(fila.ventas_uds)}</span> },
+                  { titulo: 'Uds Regaladas', derecha: true, valor: fila => fila.regaladas_uds, render: fila => <span className={colorPorSigno(fila.regaladas_uds)}>{Math.round(fila.regaladas_uds)}</span> },
+                  { titulo: 'Muestras', derecha: true, valor: fila => fila.muestras_uds, render: fila => <span className={colorPorSigno(fila.muestras_uds)}>{Math.round(fila.muestras_uds)}</span> },
+                  { titulo: 'Aportación (€)', derecha: true, valor: fila => fila.aportacion_euros, render: fila => <span className={colorPorSigno(fila.aportacion_euros)}>{formateadorMoneda.format(fila.aportacion_euros)}</span> },
+                  { titulo: 'A&P GENERADO (€)', derecha: true, valor: fila => fila.ap_generado, render: fila => <span className={colorPorSigno(fila.ap_generado)}>{formateadorMoneda.format(fila.ap_generado)}</span> },
+                  { titulo: 'A&P GASTADO (€)', derecha: true, valor: fila => fila.ap_gastado, render: fila => <span className={colorPorSigno(fila.ap_gastado)}>{formateadorMoneda.format(fila.ap_gastado)}</span> },
+                  { titulo: 'DIFERENCIA (€)', derecha: true, valor: fila => fila.diferencia, render: fila => <span className={`font-semibold ${colorPorSigno(fila.diferencia)}`}>{formateadorMoneda.format(fila.diferencia)}</span> },
+                  { titulo: 'MEDIA GASTO X UNID. MOVIDA (€)', derecha: true, valor: fila => fila.media_gasto_por_unidad, render: fila => <span className={colorPorSigno(fila.media_gasto_por_unidad)}>{formateadorMoneda.format(fila.media_gasto_por_unidad)}</span> },
+                ]}
+                filaTotales={
+                  <tr className={trTotales}>
+                    <td className={tdClasses}>TOTALES</td>
+                    <td className={`${tdRightClasses} ${colorPorSigno(kpis.ventas_uds)}`}>{Math.round(kpis.ventas_uds)}</td>
+                    <td className={`${tdRightClasses} ${colorPorSigno(kpis.regaladas_uds)}`}>{Math.round(kpis.regaladas_uds)}</td>
+                    <td className={`${tdRightClasses} ${colorPorSigno(kpis.muestras_uds)}`}>{Math.round(kpis.muestras_uds)}</td>
+                    <td className={`${tdRightClasses} ${colorPorSigno(kpis.aportacion_euros)}`}>{formateadorMoneda.format(kpis.aportacion_euros)}</td>
+                    <td className={`${tdRightClasses} ${colorPorSigno(kpis.ap_generado)}`}>{formateadorMoneda.format(kpis.ap_generado)}</td>
+                    <td className={`${tdRightClasses} ${colorPorSigno(kpis.ap_gastado)}`}>{formateadorMoneda.format(kpis.ap_gastado)}</td>
+                    <td className={`${tdRightClasses} ${colorPorSigno(kpis.diferencia)}`}>{formateadorMoneda.format(kpis.diferencia)}</td>
+                    <td className={`${tdRightClasses} ${colorPorSigno(kpis.media_gasto_por_unidad)}`}>{formateadorMoneda.format(kpis.media_gasto_por_unidad)}</td>
                   </tr>
-                )}
-
-                <tr className={trTotales}>
-                  <td className={tdClasses}>TOTALES</td>
-                  <td className={`${tdRightClasses} ${colorPorSigno(kpis.ventas_uds)}`}>{Math.round(kpis.ventas_uds)}</td>
-                  <td className={`${tdRightClasses} ${colorPorSigno(kpis.regaladas_uds)}`}>{Math.round(kpis.regaladas_uds)}</td>
-                  <td className={`${tdRightClasses} ${colorPorSigno(kpis.muestras_uds)}`}>{Math.round(kpis.muestras_uds)}</td>
-                  <td className={`${tdRightClasses} ${colorPorSigno(kpis.aportacion_euros)}`}>{formateadorMoneda.format(kpis.aportacion_euros)}</td>
-                  <td className={`${tdRightClasses} ${colorPorSigno(kpis.ap_generado)}`}>{formateadorMoneda.format(kpis.ap_generado)}</td>
-                  <td className={`${tdRightClasses} ${colorPorSigno(kpis.ap_gastado)}`}>{formateadorMoneda.format(kpis.ap_gastado)}</td>
-                  <td className={`${tdRightClasses} ${colorPorSigno(kpis.diferencia)}`}>
-                    {formateadorMoneda.format(kpis.diferencia)}
-                  </td>
-                  <td className={`${tdRightClasses} ${colorPorSigno(kpis.media_gasto_por_unidad)}`}>{formateadorMoneda.format(kpis.media_gasto_por_unidad)}</td>
-                </tr>
-              </tbody>
-            </table>
+                }
+              />
+            )}
           </div>
         </>
       )}

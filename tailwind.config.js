@@ -27,6 +27,13 @@ module.exports = {
       boxShadow: {
         card: '0 1px 2px rgba(0,0,0,0.35), 0 10px 28px -12px rgba(0,0,0,0.55)',
         'card-light': '0 1px 2px rgba(15,23,42,0.06), 0 10px 28px -12px rgba(15,23,42,0.12)',
+        // Sombra "suave" (Fase 8 — salto de calidad visual, especificación
+        // Sergio: "sombras muy suaves, no utilizar sombras grandes",
+        // ejemplo exacto 0 2px 8px rgba(0,0,0,.15)). Sustituye a `shadow-sm`
+        // en tarjeta/filtroContenedor/kpiCard (uiClasses.js) — las dos
+        // sombras de arriba (card/card-light) se dejan tal cual, siguen
+        // usándose en KpiCard.js.
+        soft: '0 2px 8px rgba(0,0,0,0.15)',
       },
     },
   },

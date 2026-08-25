@@ -1,7 +1,28 @@
 /*
  * index.css (Tema Profesional Claro + Tailwind)
  * Estilos globales de la aplicación
+ *
+ * CAMBIO (Fase 8 — "salto de calidad visual", a petición de Sergio: quiere
+ * que la app transmita "herramienta corporativa premium" al estilo Dynamics
+ * 365/Power BI/HubSpot, con especificación de colores/tipografía/radios
+ * propia): tres cambios en este archivo:
+ *  1. Se importa la fuente Inter (Google Fonts) como tipografía principal,
+ *     con el resto de la pila de siempre como fallback (ya incluía 'Segoe
+ *     UI', que era la otra opción que pidió Sergio).
+ *  2. El fondo oscuro pasa de #0f172a (slate-900) a #0B1220, el tono exacto
+ *     de su especificación — más oscuro y con un matiz más azulado. El resto
+ *     de tarjetas de la app (dark:bg-slate-800, #1e293b) ya coincidían con
+ *     su tono de "Cards" (#1E293B) por pura coincidencia de la paleta previa,
+ *     así que no ha hecho falta tocarlas.
+ *  3. Se resuelve la inconsistencia de "dos azules" que quedó señalada en la
+ *     nota de más abajo desde el Bloque 4: el botón/input genérico usaba
+ *     #007bff (azul "de marca" de las primeras fases) mientras uiClasses.js
+ *     ya usaba indigo-600. La especificación de Sergio fija el color
+ *     principal en #4F46E5 (que es, literalmente, indigo-600 de Tailwind) —
+ *     con eso zanjado, aquí también se pasa a #4F46E5.
  */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -9,7 +30,7 @@
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -20,6 +41,11 @@ body {
   color: #333; /* Texto oscuro estándar */
 }
 
+html.dark body {
+  background-color: #0B1220; /* especificación Sergio: fondo principal oscuro */
+  color: #f1f5f9; /* slate-100 */
+}
+
 /* Estilos limpios para inputs y botones */
 select,
 input[type="month"],
@@ -28,32 +54,41 @@ input[type="text"] {
   background-color: #ffffff;
   color: #333;
   border: 1px solid #ccc; /* Borde sutil */
-  border-radius: 4px;
+  border-radius: 12px; /* especificación Sergio: controles a 12px */
   padding: 8px;
   font-size: 14px;
   box-sizing: border-box; /* Asegura que el padding no rompa el layout */
+}
+
+html.dark select,
+html.dark input[type="month"],
+html.dark input[type="number"],
+html.dark input[type="text"] {
+  background-color: #1E293B; /* especificación Sergio: tono "Cards" (= slate-800) */
+  color: #f1f5f9; /* slate-100 */
+  border-color: #475569; /* slate-600 */
 }
 
 /* Efecto al seleccionar un input */
 select:focus,
 input:focus {
   outline: none;
-  border-color: #007bff; /* Un azul corporativo */
-  box-shadow: 0 0 0 2px rgba(0,123,255,.25);
+  border-color: #4F46E5; /* Color principal (especificación Sergio, = indigo-600) */
+  box-shadow: 0 0 0 2px rgba(79,70,229,.25);
 }
 
 /* Estilo de botones estándar */
 button {
   cursor: pointer;
-  border-radius: 4px;
-  border: 1px solid #007bff; /* Borde azul */
+  border-radius: 10px; /* especificación Sergio: botones a 10px */
+  border: 1px solid #4F46E5;
   padding: 8px 12px;
-  background-color: #007bff; /* Fondo azul */
+  background-color: #4F46E5; /* Color principal (especificación Sergio) */
   color: #ffffff; /* Texto blanco */
   font-weight: bold;
 }
 
 button:hover {
-  background-color: #0056b3; /* Azul más oscuro al pasar el ratón */
-  border-color: #0056b3;
+  background-color: #4338CA; /* indigo-700: mismo tono que usan los botones primarios de uiClasses.js al pasar el ratón */
+  border-color: #4338CA;
 }

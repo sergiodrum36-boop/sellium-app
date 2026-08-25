@@ -17,10 +17,11 @@ import React, { useState, useEffect } from 'react';
 import { moverAPapelera } from './firebaseApi';
 import { auth } from './firebaseConfig';
 import * as XLSX from 'xlsx';
-import { inputClasses, botonSecundario, botonExito, botonPeligro, etiqueta, filtroContenedor, thClasses, tdClasses, tdRightClasses, trTotales } from './uiClasses';
+import { inputClasses, botonSecundario, botonExito, botonPeligro, etiqueta, filtroContenedor, tdClasses, tdRightClasses, trTotales } from './uiClasses';
 import SelectorMesAno from './SelectorMesAno';
 import usePaginacion, { TAMAÑO_PAGINA_DEFECTO } from './usePaginacion';
 import Paginacion from './Paginacion';
+import TablaOrdenable, { ordenarPorConfig } from './TablaOrdenable';
 
 const formateadorMoneda = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 
@@ -139,9 +140,36 @@ function HistoricoSellIn({ idDistribuidor, marcas, listaDistribuidores, historic
     }
   };
 
-  // Paginación (ver usePaginacion.js): sobre movimientosFiltrados completo;
-  // los totales de abajo y la exportación a Excel de arriba no cambian.
-  const { pagina, totalPaginas, itemsPagina, irPaginaAnterior, irPaginaSiguiente } = usePaginacion(movimientosFiltrados);
+  // Columnas de la tabla (TablaOrdenable, 26/07/2026 — flechitas de ordenar
+  // en todos los informes de la app, a petición de Sergio).
+  const columnasHistorico = [
+    { titulo: 'Mes/Año', valor: mov => mov.mes_ano || '', render: mov => mov.mes_ano },
+    { titulo: 'Marca', valor: mov => mapaMarcas.get(mov.id_marca) || '', render: mov => <span className="font-semibold">{mapaMarcas.get(mov.id_marca) || 'N/A'}</span> },
+    { titulo: 'Unidades Compradas', derecha: true, valor: mov => mov.unidades_compradas || 0, render: mov => Math.round(mov.unidades_compradas) },
+    { titulo: 'Facturación (€)', derecha: true, valor: mov => mov.facturacion_euros || 0, render: mov => formateadorMoneda.format(mov.facturacion_euros) },
+    {
+      titulo: 'A&P Generado (€)', derecha: true, valor: mov => mov.ap_generado || 0,
+      claseCabecera: '!bg-indigo-50 dark:!bg-indigo-500/20 !text-indigo-700 dark:!text-indigo-300',
+      claseCelda: 'font-semibold bg-indigo-50/60 dark:bg-indigo-500/20',
+      render: mov => formateadorMoneda.format(mov.ap_generado),
+    },
+    {
+      titulo: 'Acciones', claseCelda: 'text-center',
+      render: mov => (
+        <button className={botonPeligro} onClick={() => handleBorrarMovimiento(mov, mapaMarcas.get(mov.id_marca) || 'N/A')}>
+          Borrar
+        </button>
+      ),
+    },
+  ];
+
+  // Paginación (ver usePaginacion.js): se ordena movimientosFiltrados
+  // COMPLETO antes de paginar (modo controlado de TablaOrdenable — ver su
+  // cabecera), para que el orden no se limite a la página visible. Los
+  // totales de abajo y la exportación a Excel de arriba siguen usando
+  // movimientosFiltrados sin ordenar/paginar.
+  const [orden, setOrden] = useState(null);
+  const { pagina, totalPaginas, itemsPagina, irPaginaAnterior, irPaginaSiguiente } = usePaginacion(ordenarPorConfig(movimientosFiltrados, columnasHistorico, orden));
 
   if (cargando) {
     return <div className="text-slate-500 dark:text-slate-400">Actualizando datos...</div>;
@@ -182,50 +210,17 @@ function HistoricoSellIn({ idDistribuidor, marcas, listaDistribuidores, historic
         </button>
       </div>
 
-      <div className="overflow-x-auto mt-5 rounded-lg border border-slate-200 dark:border-slate-700">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr>
-              <th className={thClasses}>Mes/Año</th>
-              <th className={thClasses}>Marca</th>
-              <th className={thClasses}>Unidades Compradas</th>
-              <th className={thClasses}>Facturación (€)</th>
-              <th className={`${thClasses} !bg-indigo-50 dark:!bg-indigo-500/20 !text-indigo-700 dark:!text-indigo-300`}>A&P Generado (€)</th>
-              <th className={thClasses}>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {movimientosFiltrados.length > 0 ? (
-              itemsPagina.map(mov => {
-                const nombreMarca = mapaMarcas.get(mov.id_marca) || 'N/A';
-                return (
-                  <tr key={mov.id}>
-                    <td className={tdClasses}>{mov.mes_ano}</td>
-                    <td className={`${tdClasses} font-semibold`}>{nombreMarca}</td>
-                    <td className={tdRightClasses}>{Math.round(mov.unidades_compradas)}</td>
-                    <td className={tdRightClasses}>{formateadorMoneda.format(mov.facturacion_euros)}</td>
-                    <td className={`${tdRightClasses} font-semibold bg-indigo-50/60 dark:bg-indigo-500/20`}>
-                      {formateadorMoneda.format(mov.ap_generado)}
-                    </td>
-                    <td className={`${tdClasses} text-center`}>
-                      <button
-                        className={botonPeligro}
-                        onClick={() => handleBorrarMovimiento(mov, nombreMarca)}
-                      >
-                        Borrar
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })
-            ) : (
-              <tr>
-                <td colSpan="6" className={`${tdClasses} text-center py-5`}>
-                  No hay movimientos históricos que coincidan con los filtros.
-                </td>
-              </tr>
-            )}
-            {movimientosFiltrados.length > 0 && (
+      <div className="mt-5 rounded-lg border border-slate-200 dark:border-slate-700">
+        {movimientosFiltrados.length === 0 ? (
+          <p className={`${tdClasses} text-center py-5`}>No hay movimientos históricos que coincidan con los filtros.</p>
+        ) : (
+          <TablaOrdenable
+            filas={itemsPagina}
+            columnas={columnasHistorico}
+            keyExtractor={mov => mov.id}
+            orden={orden}
+            onOrdenChange={setOrden}
+            filaTotales={
               <tr className={trTotales}>
                 <td className={tdClasses}>TOTALES</td>
                 <td className={tdClasses}></td>
@@ -236,9 +231,9 @@ function HistoricoSellIn({ idDistribuidor, marcas, listaDistribuidores, historic
                 </td>
                 <td className={tdClasses}></td>
               </tr>
-            )}
-          </tbody>
-        </table>
+            }
+          />
+        )}
       </div>
 
       <Paginacion

@@ -89,8 +89,10 @@ const COLOR_POR_CATEGORIA = {
   'Aportación directa': '#EF4444'
 };
 const COLORS = ['#6366F1', '#10B981', '#F59E0B', '#EF4444'];
-const COLOR_GOLD = '#C9A227';
-const COLOR_WINE = '#A13D52';
+// Fase 8 (especificación Sergio: "paleta más consistente") — antes gold/wine,
+// ver mismo cambio en PantallaDashboard.js.
+const COLOR_GENERADO = '#6366F1';
+const COLOR_GASTADO = '#F59E0B';
 const formateadorMoneda = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 const formateadorMonedaCorta = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
 
@@ -152,8 +154,11 @@ const construirMesesPermitidos = (rangosPorAnio) => {
 function PantallaDashboardAPCompania({ idUsuario }) {
 
   const modoOscuro = useDarkMode();
-  const colorEje = modoOscuro ? '#94a3b8' : '#6b7280';
-  const colorGrid = modoOscuro ? '#334155' : '#e5e7eb';
+  // Contraste subido (Fase 8, especificación Sergio: "algunos elementos se
+  // mezclan con el fondo oscuro", +10-15%) — ver mismo cambio en
+  // DashboardVentasReales.js/PantallaDashboard.js.
+  const colorEje = modoOscuro ? '#cbd5e1' : '#6b7280';
+  const colorGrid = modoOscuro ? '#475569' : '#e5e7eb';
   const tooltipContentStyle = {
     borderRadius: 8,
     fontSize: 13,
@@ -534,8 +539,8 @@ function PantallaDashboardAPCompania({ idUsuario }) {
         <GraficoBox titulo={`A&P Generado (Sell-In + Stock Inicial) vs. Gastado por Marca ${datosGrafico1.length === 10 ? '(Top 10)' : ''}`}>
           {/* Barra horizontal: evita que se corten los nombres de marca
               largos. Orden descendente por A&P Generado ya aplicado en
-              procesar(). Colores: gold para Generado, wine para Gastado
-              (tokens de tailwind.config.js). Tarjeta interactiva: clic en
+              procesar(). Colores: indigo para Generado, ámbar para Gastado
+              (ver COLOR_GENERADO/COLOR_GASTADO más arriba, Fase 8). Tarjeta interactiva: clic en
               una barra filtra todo el dashboard a esa marca (mismo filtro
               que el desplegable "Marca" de arriba, pero se aplica al
               instante, sin pulsar "ACTUALIZAR"). */}
@@ -548,7 +553,7 @@ function PantallaDashboardAPCompania({ idUsuario }) {
                   setFiltros(nuevo);
                   procesar(rawSellIn, rawSellOut, rawStockInicial, nuevo, rangosPorAnio, mapaMarcas, mapaDistribuidores, marcas);
                 }}
-                className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-wine-soft !text-slate-900 dark:!text-white !border-0"
+                className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/15 !text-indigo-700 dark:!text-indigo-300 !border-0"
               >
                 Filtrando: {marcaSeleccionada} ✕
               </button>
@@ -568,12 +573,12 @@ function PantallaDashboardAPCompania({ idUsuario }) {
               />
               <Tooltip formatter={(value) => formateadorMoneda.format(value)} labelFormatter={(label) => label} contentStyle={tooltipContentStyle} />
               <Legend wrapperStyle={legendStyle} />
-              <Bar dataKey="generado" fill={COLOR_GOLD} name="A&P Generado" radius={[0, 3, 3, 0]} cursor="pointer" onClick={handleClickMarca}>
+              <Bar dataKey="generado" fill={COLOR_GENERADO} name="A&P Generado" radius={[0, 3, 3, 0]} cursor="pointer" onClick={handleClickMarca}>
                 {datosGrafico1.map((entry) => (
                   <Cell key={entry.nombre} fillOpacity={!marcaSeleccionada || marcaSeleccionada === entry.nombre ? 1 : 0.3} />
                 ))}
               </Bar>
-              <Bar dataKey="gastado" fill={COLOR_WINE} name="A&P Gastado" radius={[0, 3, 3, 0]} cursor="pointer" onClick={handleClickMarca}>
+              <Bar dataKey="gastado" fill={COLOR_GASTADO} name="A&P Gastado" radius={[0, 3, 3, 0]} cursor="pointer" onClick={handleClickMarca}>
                 {datosGrafico1.map((entry) => (
                   <Cell key={entry.nombre} fillOpacity={!marcaSeleccionada || marcaSeleccionada === entry.nombre ? 1 : 0.3} />
                 ))}
@@ -668,7 +673,7 @@ function PantallaDashboardAPCompania({ idUsuario }) {
                   setFiltros(nuevo);
                   procesar(rawSellIn, rawSellOut, rawStockInicial, nuevo, rangosPorAnio, mapaMarcas, mapaDistribuidores, marcas);
                 }}
-                className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-wine-soft !text-slate-900 dark:!text-white !border-0"
+                className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/15 !text-indigo-700 dark:!text-indigo-300 !border-0"
               >
                 Filtrando: {distribuidorSeleccionadoGestion} ✕
               </button>

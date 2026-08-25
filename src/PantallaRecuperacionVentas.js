@@ -37,9 +37,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { getVentasRealesGeneral } from './firebaseApi';
 import {
   inputClasses, botonSecundario, botonExito, etiqueta, filtroContenedor, tarjeta,
-  thClasses, tdClasses, tdRightClasses, trTotales, colorPorSigno, tituloPantalla, subtitulo,
+  tdClasses, tdRightClasses, trTotales, colorPorSigno, tituloPantalla, subtitulo,
   kpiCard, kpiTitulo, kpiValor
 } from './uiClasses';
+import TablaOrdenable from './TablaOrdenable';
 import * as XLSX from 'xlsx';
 import { crearDocumentoPdf, descargarPdf } from './pdfExport';
 import autoTable from 'jspdf-autotable';
@@ -368,41 +369,29 @@ function PantallaRecuperacionVentas({ idUsuario }) {
             <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
               Distribuidores — ordenados por importe a recuperar (haz clic en uno para ver el detalle por marca)
             </h4>
-            <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr>
-                    <th className={thClasses}>Distribuidor</th>
-                    <th className={thClasses}>Estado</th>
-                    <th className={thClasses}>Importe {rangoAnteriorLabel}</th>
-                    <th className={thClasses}>Importe {rangoActualLabel}</th>
-                    <th className={thClasses}>Variación</th>
-                    <th className={thClasses}>Importe a recuperar</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {distribuidores.map(d => (
-                    <tr
-                      key={d.id_distribuidor}
-                      onClick={() => setIdDistribuidorSeleccionado(d.id_distribuidor)}
-                      className={`cursor-pointer ${d.id_distribuidor === idDistribuidorSeleccionado ? 'bg-slate-100 dark:bg-slate-700' : ''}`}
-                    >
-                      <td className={`${tdClasses} font-semibold`}>{d.nombre_distribuidor}</td>
-                      <td className={tdClasses}>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${BADGE_SEMAFORO[d.semaforo]}`}>
-                          {ETIQUETA_SEMAFORO[d.semaforo]}
-                        </span>
-                      </td>
-                      <td className={tdRightClasses}>{formateadorMoneda.format(d.importeAnteriorTotal)}</td>
-                      <td className={tdRightClasses}>{formateadorMoneda.format(d.importeActualTotal)}</td>
-                      <td className={`${tdRightClasses} ${colorPorSigno(d.variacionPct ?? 0)}`}>
-                        {d.variacionPct === null ? '—' : `${d.variacionPct >= 0 ? '+' : ''}${d.variacionPct.toFixed(1)}%`}
-                      </td>
-                      <td className={tdRightClasses}>{formateadorMoneda.format(d.importePerdidoTotal)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+              <TablaOrdenable
+                filas={distribuidores}
+                keyExtractor={d => d.id_distribuidor}
+                onFilaClick={d => setIdDistribuidorSeleccionado(d.id_distribuidor)}
+                claseFila={d => d.id_distribuidor === idDistribuidorSeleccionado ? 'bg-slate-100 dark:bg-slate-700' : ''}
+                columnas={[
+                  { titulo: 'Distribuidor', valor: d => d.nombre_distribuidor, render: d => <span className="font-semibold">{d.nombre_distribuidor}</span> },
+                  {
+                    titulo: 'Estado', valor: d => ETIQUETA_SEMAFORO[d.semaforo] || '', render: d => (
+                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${BADGE_SEMAFORO[d.semaforo]}`}>{ETIQUETA_SEMAFORO[d.semaforo]}</span>
+                    ),
+                  },
+                  { titulo: `Importe ${rangoAnteriorLabel}`, derecha: true, valor: d => d.importeAnteriorTotal, render: d => formateadorMoneda.format(d.importeAnteriorTotal) },
+                  { titulo: `Importe ${rangoActualLabel}`, derecha: true, valor: d => d.importeActualTotal, render: d => formateadorMoneda.format(d.importeActualTotal) },
+                  {
+                    titulo: 'Variación', derecha: true, valor: d => d.variacionPct ?? 0, render: d => (
+                      <span className={colorPorSigno(d.variacionPct ?? 0)}>{d.variacionPct === null ? '—' : `${d.variacionPct >= 0 ? '+' : ''}${d.variacionPct.toFixed(1)}%`}</span>
+                    ),
+                  },
+                  { titulo: 'Importe a recuperar', derecha: true, valor: d => d.importePerdidoTotal, render: d => formateadorMoneda.format(d.importePerdidoTotal) },
+                ]}
+              />
             </div>
           </div>
 
@@ -411,31 +400,26 @@ function PantallaRecuperacionVentas({ idUsuario }) {
               <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-200 mb-3">
                 {distribuidorSeleccionado.nombre_distribuidor} — qué venderle para recuperar {rangoAnteriorLabel}
               </h4>
-              <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr>
-                      <th className={thClasses}>Marca</th>
-                      <th className={thClasses}>Cajas {rangoAnteriorLabel}</th>
-                      <th className={thClasses}>Cajas {rangoActualLabel}</th>
-                      <th className={thClasses}>Cajas que faltan</th>
-                      <th className={thClasses}>Importe que falta</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {distribuidorSeleccionado.marcas.map(m => (
-                      <tr key={m.id_marca}>
-                        <td className={`${tdClasses} font-semibold`}>{m.nombre_marca}</td>
-                        <td className={tdRightClasses}>{formateadorNumero.format(Math.round(m.cajasAnterior || 0))}</td>
-                        <td className={tdRightClasses}>{formateadorNumero.format(Math.round(m.cajasActual || 0))}</td>
-                        <td className={`${tdRightClasses} ${m.cajasPerdidas > 0 ? '!text-red-600 dark:!text-red-400 font-semibold' : ''}`}>
-                          {formateadorNumero.format(Math.round(m.cajasPerdidas))}
-                        </td>
-                        <td className={`${tdRightClasses} ${m.importePerdido > 0 ? '!text-red-600 dark:!text-red-400 font-semibold' : ''}`}>
-                          {formateadorMoneda.format(m.importePerdido)}
-                        </td>
-                      </tr>
-                    ))}
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+                <TablaOrdenable
+                  filas={distribuidorSeleccionado.marcas}
+                  keyExtractor={m => m.id_marca}
+                  columnas={[
+                    { titulo: 'Marca', valor: m => m.nombre_marca, render: m => <span className="font-semibold">{m.nombre_marca}</span> },
+                    { titulo: `Cajas ${rangoAnteriorLabel}`, derecha: true, valor: m => m.cajasAnterior || 0, render: m => formateadorNumero.format(Math.round(m.cajasAnterior || 0)) },
+                    { titulo: `Cajas ${rangoActualLabel}`, derecha: true, valor: m => m.cajasActual || 0, render: m => formateadorNumero.format(Math.round(m.cajasActual || 0)) },
+                    {
+                      titulo: 'Cajas que faltan', derecha: true, valor: m => m.cajasPerdidas, render: m => (
+                        <span className={m.cajasPerdidas > 0 ? '!text-red-600 dark:!text-red-400 font-semibold' : ''}>{formateadorNumero.format(Math.round(m.cajasPerdidas))}</span>
+                      ),
+                    },
+                    {
+                      titulo: 'Importe que falta', derecha: true, valor: m => m.importePerdido, render: m => (
+                        <span className={m.importePerdido > 0 ? '!text-red-600 dark:!text-red-400 font-semibold' : ''}>{formateadorMoneda.format(m.importePerdido)}</span>
+                      ),
+                    },
+                  ]}
+                  filaTotales={
                     <tr className={trTotales}>
                       <td className={tdClasses}>TOTAL A RECUPERAR</td>
                       <td className={tdClasses}></td>
@@ -445,8 +429,8 @@ function PantallaRecuperacionVentas({ idUsuario }) {
                       </td>
                       <td className={tdRightClasses}>{formateadorMoneda.format(distribuidorSeleccionado.importePerdidoTotal)}</td>
                     </tr>
-                  </tbody>
-                </table>
+                  }
+                />
               </div>
             </div>
           )}

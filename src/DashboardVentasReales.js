@@ -115,10 +115,11 @@ import {
 import * as XLSX from 'xlsx';
 import {
   inputClasses, botonSecundario, botonExito, filtroContenedor, etiqueta,
-  thClasses, tdClasses, tdRightClasses, trTotales, colorPorSigno
+  tdClasses, tdRightClasses, trTotales, colorPorSigno
 } from './uiClasses';
 import PeriodoComparador from './PeriodoComparador';
 import { inferirTipologiaPorNombre } from './tipologia';
+import TablaOrdenable, { ordenarPorConfig } from './TablaOrdenable';
 // Exportar a PDF (resumen ejecutivo de los 7 KPIs), a petición de Sergio —
 // ver pdfExport.js. A diferencia de handleExportarExcel (que exporta
 // filasTabla, el detalle línea a línea del año base), esto exporta la
@@ -200,8 +201,13 @@ function useDarkMode() {
 
 function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGlobales = [] }) {
   const modoOscuro = useDarkMode();
-  const colorEje = modoOscuro ? '#94a3b8' : '#6b7280';
-  const colorGrid = modoOscuro ? '#334155' : '#e5e7eb';
+  // Contraste subido (Fase 8, especificación Sergio: "algunos elementos se
+  // mezclan con el fondo oscuro", +10-15%) — antes slate-400/slate-700,
+  // ahora slate-300/slate-600. Coincide además con el nuevo fondo oscuro
+  // #0B1220 (más oscuro que el anterior #0f172a), que necesitaba algo más
+  // de contraste para que ejes y etiquetas no se apagaran.
+  const colorEje = modoOscuro ? '#cbd5e1' : '#6b7280';
+  const colorGrid = modoOscuro ? '#475569' : '#e5e7eb';
   const tooltipContentStyle = {
     borderRadius: 8,
     fontSize: 13,
@@ -619,10 +625,49 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
     [...filasAnioBase].sort((a, b) => (b.mes_ano || '').localeCompare(a.mes_ano || '')),
   [filasAnioBase]);
 
+  // Se adelantan aquí (antes solo existían más abajo, junto a los otros
+  // "Seleccionado") porque columnasDetalle, justo debajo, ya necesita
+  // tipologiaSeleccionada para decidir si pinta el ID de marca bajo el
+  // nombre — igual que hacía la tabla antes de pasar a TablaOrdenable.
+  const distribuidorSeleccionado = filtros.idsDistribuidor.length === 1
+    ? distribuidoresDisponibles.find(d => d.id === filtros.idsDistribuidor[0])?.nombre
+    : null;
+  const familiaSeleccionada = filtros.familias.length === 1 ? filtros.familias[0] : null;
+  const tipologiaSeleccionada = filtros.tipologias.length === 1 ? filtros.tipologias[0] : null;
+
+  // Columnas de la tabla "Detalle" (TablaOrdenable, 26/07/2026 — a petición
+  // de Sergio de aplicar las flechitas de ordenar a todos los informes).
+  const columnasDetalle = [
+    { titulo: 'Mes/Año', render: f => f.mes_ano, valor: f => f.mes_ano },
+    { titulo: 'Distribuidor', render: f => <span className="font-semibold">{f.nombre_distribuidor}</span>, valor: f => f.nombre_distribuidor },
+    { titulo: 'Familia', render: f => f.familia || '—', valor: f => f.familia || '' },
+    {
+      titulo: 'Subfamilia (Marca)',
+      valor: f => f.nombre_marca,
+      render: f => (
+        <>
+          {f.nombre_marca}
+          {tipologiaSeleccionada === 'Sin clasificar' && (
+            <div className="mt-0.5 font-mono text-[10px] text-slate-400 dark:text-slate-600">
+              ID: {f.id_marca || '(sin id_marca)'}
+            </div>
+          )}
+        </>
+      ),
+    },
+    { titulo: 'Uds', derecha: true, valor: f => f.uds || 0, render: f => formateadorNumero.format(f.uds || 0) },
+    { titulo: 'Cajas', derecha: true, valor: f => f.cajas || 0, render: f => formateadorNumero.format(Math.round(f.cajas || 0)) },
+    { titulo: 'Importe (€)', derecha: true, valor: f => f.importe_euros || 0, render: f => formateadorMoneda.format(f.importe_euros || 0) },
+  ];
+
   // Paginación de la tabla "Detalle" (ver usePaginacion.js y cabecera del
   // archivo). handleExportarExcel, más abajo, sigue usando filasTabla
-  // completo — la paginación es solo para lo que se pinta en pantalla.
-  const { pagina, totalPaginas, itemsPagina, irPaginaAnterior, irPaginaSiguiente } = usePaginacion(filasTabla);
+  // completo (sin ordenar por clic, sin paginar) — la paginación y el orden
+  // son solo para lo que se pinta en pantalla. `orden` es "modo controlado"
+  // de TablaOrdenable (ver su cabecera): se ordena el array COMPLETO aquí,
+  // ANTES de paginar, para que el orden no se limite a la página visible.
+  const [orden, setOrden] = useState(null);
+  const { pagina, totalPaginas, itemsPagina, irPaginaAnterior, irPaginaSiguiente } = usePaginacion(ordenarPorConfig(filasTabla, columnasDetalle, orden));
 
   const handleLimpiarFiltros = () => {
     setFiltros({ idsDistribuidor: [], familias: [], idsMarca: [], tipologias: [] });
@@ -666,12 +711,6 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
       return { ...prev, tipologias: yaActivo ? [] : [nombre] };
     });
   };
-
-  const distribuidorSeleccionado = filtros.idsDistribuidor.length === 1
-    ? distribuidoresDisponibles.find(d => d.id === filtros.idsDistribuidor[0])?.nombre
-    : null;
-  const familiaSeleccionada = filtros.familias.length === 1 ? filtros.familias[0] : null;
-  const tipologiaSeleccionada = filtros.tipologias.length === 1 ? filtros.tipologias[0] : null;
 
   const handleExportarExcel = () => {
     if (filasTabla.length === 0) {
@@ -957,7 +996,7 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
                   <button
                     type="button"
                     onClick={() => setFiltros(prev => ({ ...prev, idsDistribuidor: [] }))}
-                    className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-wine-soft !text-slate-900 dark:!text-white !border-0"
+                    className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/15 !text-indigo-700 dark:!text-indigo-300 !border-0"
                   >
                     Filtrando: {distribuidorSeleccionado} ✕
                   </button>
@@ -996,7 +1035,7 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
                   <button
                     type="button"
                     onClick={() => setFiltros(prev => ({ ...prev, familias: [] }))}
-                    className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-wine-soft !text-slate-900 dark:!text-white !border-0"
+                    className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/15 !text-indigo-700 dark:!text-indigo-300 !border-0"
                   >
                     Filtrando: {familiaSeleccionada} ✕
                   </button>
@@ -1101,7 +1140,7 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
                   <button
                     type="button"
                     onClick={() => setFiltros(prev => ({ ...prev, tipologias: [] }))}
-                    className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-wine-soft !text-slate-900 dark:!text-white !border-0"
+                    className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-indigo-50 dark:bg-indigo-500/15 !text-indigo-700 dark:!text-indigo-300 !border-0"
                   >
                     Filtrando: {tipologiaSeleccionada} ✕
                   </button>
@@ -1185,45 +1224,17 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
             </div>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-            <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr>
-                  <th className={thClasses}>Mes/Año</th>
-                  <th className={thClasses}>Distribuidor</th>
-                  <th className={thClasses}>Familia</th>
-                  <th className={thClasses}>Subfamilia (Marca)</th>
-                  <th className={thClasses}>Uds</th>
-                  <th className={thClasses}>Cajas</th>
-                  <th className={thClasses}>Importe (€)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filasTabla.length > 0 ? (
-                  itemsPagina.map(f => (
-                    <tr key={f.id}>
-                      <td className={tdClasses}>{f.mes_ano}</td>
-                      <td className={`${tdClasses} font-semibold`}>{f.nombre_distribuidor}</td>
-                      <td className={tdClasses}>{f.familia || '—'}</td>
-                      <td className={tdClasses}>
-                        {f.nombre_marca}
-                        {tipologiaSeleccionada === 'Sin clasificar' && (
-                          <div className="mt-0.5 font-mono text-[10px] text-slate-400 dark:text-slate-600">
-                            ID: {f.id_marca || '(sin id_marca)'}
-                          </div>
-                        )}
-                      </td>
-                      <td className={tdRightClasses}>{formateadorNumero.format(f.uds || 0)}</td>
-                      <td className={tdRightClasses}>{formateadorNumero.format(Math.round(f.cajas || 0))}</td>
-                      <td className={tdRightClasses}>{formateadorMoneda.format(f.importe_euros || 0)}</td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="7" className={`${tdClasses} text-center py-5`}>No hay ventas reales que coincidan con los filtros.</td>
-                  </tr>
-                )}
-                {filasTabla.length > 0 && (
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+            {filasTabla.length === 0 ? (
+              <p className={`${tdClasses} text-center py-5`}>No hay ventas reales que coincidan con los filtros.</p>
+            ) : (
+              <TablaOrdenable
+                filas={itemsPagina}
+                columnas={columnasDetalle}
+                keyExtractor={f => f.id}
+                orden={orden}
+                onOrdenChange={setOrden}
+                filaTotales={
                   <tr className={trTotales}>
                     <td className={tdClasses}>TOTALES</td>
                     <td className={tdClasses}></td>
@@ -1233,9 +1244,9 @@ function DashboardVentasReales({ ventasReales, tipologiasMarca = [], marcasGloba
                     <td className={tdRightClasses}>{formateadorNumero.format(Math.round(kpisBase.cajas))}</td>
                     <td className={tdRightClasses}>{formateadorMoneda.format(kpisBase.importe)}</td>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                }
+              />
+            )}
           </div>
 
           <Paginacion

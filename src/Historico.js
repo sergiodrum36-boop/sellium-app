@@ -21,10 +21,11 @@ import { moverAPapelera } from './firebaseApi';
 import { auth } from './firebaseConfig';
 import * as XLSX from 'xlsx';
 import { valorRegaladas, valorMuestras, valorAcuerdo, unidadesAcuerdo, gastoTotal } from './calculosAP';
-import { inputClasses, botonSecundario, botonExito, botonPeligro, etiqueta, filtroContenedor, thClasses, tdClasses, tdRightClasses, trTotales } from './uiClasses';
+import { inputClasses, botonSecundario, botonExito, botonPeligro, etiqueta, filtroContenedor, tdClasses, tdRightClasses, trTotales } from './uiClasses';
 import SelectorMesAno from './SelectorMesAno';
 import usePaginacion, { TAMAÑO_PAGINA_DEFECTO } from './usePaginacion';
 import Paginacion from './Paginacion';
+import TablaOrdenable, { ordenarPorConfig } from './TablaOrdenable';
 
 const formateadorMoneda = new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'EUR' });
 
@@ -141,11 +142,48 @@ function Historico({ idDistribuidor, marcas, listaDistribuidores, historicoSellO
     }
   };
 
-  // Paginación (ver usePaginacion.js): SIEMPRE sobre movimientosFiltrados
-  // completo, nunca sobre una versión recortada — los totales de abajo y la
-  // exportación a Excel de arriba usan movimientosFiltrados igual que
-  // antes, sin paginar.
-  const { pagina, totalPaginas, itemsPagina, irPaginaAnterior, irPaginaSiguiente } = usePaginacion(movimientosFiltrados);
+  // Columnas de la tabla (TablaOrdenable, 26/07/2026 — flechitas de ordenar
+  // en todos los informes de la app, a petición de Sergio).
+  const columnasHistorico = [
+    { titulo: 'Mes/Año', valor: mov => mov.mes_ano || '', render: mov => mov.mes_ano },
+    { titulo: 'Marca', valor: mov => mapaMarcas.get(mov.id_marca) || '', render: mov => <span className="font-semibold">{mapaMarcas.get(mov.id_marca) || 'Marca Desconocida'}</span> },
+    { titulo: 'Precio (€)', derecha: true, valor: mov => mov.coste_unidad || 0, render: mov => formateadorMoneda.format(mov.coste_unidad) },
+    { titulo: 'Ventas (uds)', derecha: true, valor: mov => mov.ventas_uds || 0, render: mov => Math.round(mov.ventas_uds) },
+    { titulo: 'Ventas (€)', derecha: true, valor: mov => mov.ventas_euros || 0, render: mov => formateadorMoneda.format(mov.ventas_euros) },
+    { titulo: 'Muestras (uds)', derecha: true, valor: mov => mov.muestras_uds || 0, render: mov => Math.round(mov.muestras_uds) },
+    { titulo: 'Regaladas (uds)', derecha: true, valor: mov => mov.regaladas_uds || 0, render: mov => Math.round(mov.regaladas_uds) },
+    { titulo: 'Acuerdo (uds)', derecha: true, valor: mov => mov.unidades_acuerdo_calc || 0, render: mov => Math.round(mov.unidades_acuerdo_calc || 0) },
+    {
+      titulo: 'Valor Acuerdo (€)', derecha: true, valor: mov => mov.valor_acuerdo_calc || 0,
+      claseCabecera: '!text-amber-600 dark:!text-amber-400',
+      render: mov => formateadorMoneda.format(mov.valor_acuerdo_calc || 0),
+    },
+    {
+      titulo: 'Aportación Manual (€) ⓘ', derecha: true, valor: mov => mov.aportacion_euros || 0,
+      render: mov => formateadorMoneda.format(mov.aportacion_euros),
+    },
+    {
+      titulo: 'TOTAL A&P (€)', derecha: true, valor: mov => mov.total_ap_movimiento || 0,
+      claseCabecera: '!bg-indigo-50 dark:!bg-indigo-500/20 !text-indigo-700 dark:!text-indigo-300',
+      claseCelda: 'font-semibold bg-indigo-50/60 dark:bg-indigo-500/20',
+      render: mov => formateadorMoneda.format(mov.total_ap_movimiento),
+    },
+    {
+      titulo: 'Acciones', claseCelda: 'text-center',
+      render: mov => (
+        <button className={botonPeligro} onClick={() => handleBorrarMovimiento(mov, mapaMarcas.get(mov.id_marca) || 'Marca Desconocida')}>
+          Borrar
+        </button>
+      ),
+    },
+  ];
+
+  // Paginación (ver usePaginacion.js): se ordena movimientosFiltrados
+  // COMPLETO antes de paginar (modo controlado de TablaOrdenable — ver su
+  // cabecera). Los totales de abajo y la exportación a Excel de arriba usan
+  // movimientosFiltrados igual que antes, sin ordenar/paginar.
+  const [orden, setOrden] = useState(null);
+  const { pagina, totalPaginas, itemsPagina, irPaginaAnterior, irPaginaSiguiente } = usePaginacion(ordenarPorConfig(movimientosFiltrados, columnasHistorico, orden));
 
   if (cargando) {
     return <div className="text-slate-500 dark:text-slate-400">Actualizando datos...</div>;
@@ -194,62 +232,17 @@ function Historico({ idDistribuidor, marcas, listaDistribuidores, historicoSellO
         </button>
       </div>
 
-      <div className="overflow-x-auto mt-5 rounded-lg border border-slate-200 dark:border-slate-800">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr>
-              <th className={thClasses}>Mes/Año</th>
-              <th className={thClasses}>Marca</th>
-              <th className={thClasses}>Precio (€)</th>
-              <th className={thClasses}>Ventas (uds)</th>
-              <th className={thClasses}>Ventas (€)</th>
-              <th className={thClasses}>Muestras (uds)</th>
-              <th className={thClasses}>Regaladas (uds)</th>
-              <th className={thClasses}>Acuerdo (uds)</th>
-              <th className={`${thClasses} !text-amber-600 dark:!text-amber-400`}>Valor Acuerdo (€)</th>
-              <th className={thClasses} title="Solo se rellena si se introdujo a mano un gasto extra de A&P que no fuera Muestras, Regaladas ni Acuerdo. En datos importados del Excel siempre es 0€.">Aportación Manual (€) ⓘ</th>
-              <th className={`${thClasses} !bg-indigo-50 dark:!bg-indigo-500/20 !text-indigo-700 dark:!text-indigo-300`}>TOTAL A&P (€)</th>
-              <th className={thClasses}>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {movimientosFiltrados.length > 0 ? (
-              itemsPagina.map(mov => {
-                const nombreMarca = mapaMarcas.get(mov.id_marca) || 'Marca Desconocida';
-                return (
-                  <tr key={mov.id}>
-                    <td className={tdClasses}>{mov.mes_ano}</td>
-                    <td className={`${tdClasses} font-semibold`}>{nombreMarca}</td>
-                    <td className={tdRightClasses}>{formateadorMoneda.format(mov.coste_unidad)}</td>
-                    <td className={tdRightClasses}>{Math.round(mov.ventas_uds)}</td>
-                    <td className={tdRightClasses}>{formateadorMoneda.format(mov.ventas_euros)}</td>
-                    <td className={tdRightClasses}>{Math.round(mov.muestras_uds)}</td>
-                    <td className={tdRightClasses}>{Math.round(mov.regaladas_uds)}</td>
-                    <td className={tdRightClasses}>{Math.round(mov.unidades_acuerdo_calc || 0)}</td>
-                    <td className={tdRightClasses}>{formateadorMoneda.format(mov.valor_acuerdo_calc || 0)}</td>
-                    <td className={tdRightClasses}>{formateadorMoneda.format(mov.aportacion_euros)}</td>
-                    <td className={`${tdRightClasses} font-semibold bg-indigo-50/60 dark:bg-indigo-500/20`}>
-                      {formateadorMoneda.format(mov.total_ap_movimiento)}
-                    </td>
-                    <td className={`${tdClasses} text-center`}>
-                      <button
-                        className={botonPeligro}
-                        onClick={() => handleBorrarMovimiento(mov, nombreMarca)}
-                      >
-                        Borrar
-                      </button>
-                    </td>
-                  </tr>
-                )
-              })
-            ) : (
-              <tr>
-                <td colSpan="12" className={`${tdClasses} text-center py-5`}>
-                  No hay movimientos históricos que coincidan con los filtros.
-                </td>
-              </tr>
-            )}
-            {movimientosFiltrados.length > 0 && (
+      <div className="mt-5 rounded-lg border border-slate-200 dark:border-slate-800">
+        {movimientosFiltrados.length === 0 ? (
+          <p className={`${tdClasses} text-center py-5`}>No hay movimientos históricos que coincidan con los filtros.</p>
+        ) : (
+          <TablaOrdenable
+            filas={itemsPagina}
+            columnas={columnasHistorico}
+            keyExtractor={mov => mov.id}
+            orden={orden}
+            onOrdenChange={setOrden}
+            filaTotales={
               <tr className={trTotales}>
                 <td className={tdClasses}>TOTALES</td>
                 <td className={tdClasses}></td>
@@ -266,9 +259,9 @@ function Historico({ idDistribuidor, marcas, listaDistribuidores, historicoSellO
                 </td>
                 <td className={tdClasses}></td>
               </tr>
-            )}
-          </tbody>
-        </table>
+            }
+          />
+        )}
       </div>
 
       <Paginacion

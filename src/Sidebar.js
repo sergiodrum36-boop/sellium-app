@@ -2,199 +2,108 @@
  * Sidebar.js (Rediseño visual, Fase 3 + Fase 4 "Unificar Dashboards" + Fase 5
  * "Subcategorías dentro de Gestión")
  *
- * Contenido de navegación del Sidebar: grupos colapsables (p.ej. "Gestión
- * por Distribuidor", "Dashboard") más los accesos de nivel superior (items
- * planos como "Reportes Generales").
+ * CAMBIO (Fase 8 — "sidebar compacto", a petición de Sergio: "si ya se
+ * navega a través de la página principal del menú, para qué sirve tener lo
+ * mismo en el menú lateral... se puede arreglar para que quede más
+ * controlado, compactado y menos lioso"): hasta ahora este componente
+ * dibujaba el ÁRBOL COMPLETO de cada grupo (subcategorías + items hoja,
+ * expandibles con chevron) — exactamente la misma información que
+ * PantallaGrupo.js ya enseña como tarjetas grandes al entrar en un grupo, y
+ * que ahora también cubre el buscador Ctrl+K (Layout.js). Mantener las 3
+ * versiones (Sidebar, PantallaGrupo, buscador) era la redundancia que
+ * Sergio señaló.
  *
- * DECISIÓN DE DISEÑO (Fase 3, se mantiene): Layout.js YA tenía un sidebar
- * funcionando de una fase de rediseño anterior (Fase 1) con logo, modo
- * oscuro persistente, colapsar y cerrar sesión. Sidebar.js es SOLO el
- * contenido de navegación: Layout.js sigue siendo el "cascarón" y renderiza
- * <Sidebar> en el hueco central donde antes iba su lista plana de
- * NAV_ITEMS.
+ * A partir de ahora el Sidebar es DELIBERADAMENTE plano: cada grupo de nivel
+ * superior es una única fila (sin expandir, sin chevron) que al pulsarla
+ * navega a PantallaGrupo — el mismo destino que su tarjeta en Inicio. Ya no
+ * gestiona ningún estado de abierto/cerrado ni renderiza subcategorías o
+ * items hoja. Para llegar a una pantalla concreta (p.ej. "Compras") ahora
+ * hay 3 caminos, ninguno de ellos el Sidebar: la tarjeta dentro de
+ * PantallaGrupo, las migas de pan una vez dentro, o el buscador Ctrl+K desde
+ * cualquier sitio.
  *
- * Por eso Sidebar es un componente "tonto": no conoce los ids de pestaña por
- * sí mismo (evita import circular), los recibe ya resueltos en groups/
- * topItems.
+ * Eso sí: si la pantalla activa es una pantalla "hoja" DENTRO de un grupo
+ * (p.ej. estás en "Compras", que pertenece a "Ventas y Datos"), la fila de
+ * ese grupo en el Sidebar se resalta igual que si estuvieras en su propia
+ * pantalla de menú — así sigues viendo en qué área estás sin necesidad de
+ * mostrar el árbol entero (`contieneActivo`, más abajo).
  *
- * MODELO DE DATOS (Fase 5): cada grupo de nivel superior es
- * { id, label, icon, items }, donde `items` es un array de entradas que
- * pueden ser:
- *   - un item hoja: { id, label, icon } → navega a esa pestaña.
- *   - una subcategoría anidada: { id, label, icon, items: [...] } → misma
- *     forma que un grupo, así que se renderiza de forma recursiva. Esto
- *     permite un nivel extra de anidación (p.ej. "Gestión por Distribuidor"
- *     > "Control A&P" > "Stock") sin necesidad de un tipo de dato distinto:
- *     "¿tiene `items`?" ya distingue contenedor de item hoja.
- * Los items sueltos (p.ej. "Importar Excel", que no pertenece a ninguna
- * subcategoría) conviven al mismo nivel que las subcategorías dentro de
- * `items` del grupo padre.
+ * Sigue siendo un componente "tonto": no conoce los ids de pestaña por sí
+ * mismo (evita import circular), los recibe ya resueltos en groups/topItems
+ * — mismo contrato que antes, Layout.js no necesita cambiar cómo lo invoca.
  *
- * Cada contenedor (grupo o subcategoría) mantiene su propio estado abierto/
- * cerrado de forma independiente (objeto `abiertos`, indexado por su id), y
- * se auto-abre en cascada si la vista activa está dentro de él o de
- * cualquiera de sus descendientes.
- *
- * Nota (Fase 3): se añadió "Mantenimiento" a la lista de Gestión (no estaba
- * en el boceto pegado en su momento) para no perder esa pestaña, que sí
- * existe en la app.
+ * CAMBIO (Fase 8 — "salto de calidad visual", especificación Sergio: estilo
+ * Dynamics 365 — "reducir un 20% la altura de cada elemento, aumentar
+ * ligeramente contraste de sección activa"): filas más compactas (py-1.5,
+ * antes py-2) e icono un pelín más pequeño, y el resaltado activo pasa de
+ * wine (color de marca "Sellium") al color corporativo indigo-600 —
+ * especificación explícita de Sergio ("color principal... solo para estados
+ * activos"), con más contraste que el wine-soft anterior (texto y fondo con
+ * más peso, no solo un fondo suave).
  */
 
-import { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown } from 'lucide-react';
-
-// --- Helpers recursivos sobre el árbol de grupos/subcategorías/items ---
-
-// ¿Esta entrada es un contenedor (grupo o subcategoría) en vez de un item hoja?
-const esContenedor = (entrada) => Array.isArray(entrada.items);
-
-// Recorre `entradas` recopilando los ids de TODOS los contenedores
-// (incluidos los anidados), para poder inicializar su estado abierto/cerrado.
-const recopilarIdsContenedores = (entradas, acc) => {
-  entradas.forEach((entrada) => {
-    if (esContenedor(entrada)) {
-      acc.push(entrada.id);
-      recopilarIdsContenedores(entrada.items, acc);
-    }
-  });
-  return acc;
-};
-
-// Marca en `estado` (mutándolo) qué contenedores hay que abrir para que se
-// vea la vista activa (abre el contenedor y todos sus ancestros). Devuelve
-// true si `activeId` está dentro de `entradas` (a cualquier profundidad).
-const marcarRutaAbierta = (entradas, activeId, estado) => {
-  return entradas.some((entrada) => {
-    if (esContenedor(entrada)) {
-      const encontrado = marcarRutaAbierta(entrada.items, activeId, estado);
-      if (encontrado) estado[entrada.id] = true;
-      return encontrado;
-    }
-    return entrada.id === activeId;
-  });
+// ¿La pantalla activa es este grupo, o cualquiera de sus items (a cualquier
+// profundidad, incluidas subcategorías anidadas)? Solo se usa para decidir
+// el resaltado de la fila — el árbol en sí ya no se dibuja.
+const contieneActivo = (entrada, activeId) => {
+  if (entrada.id === activeId) return true;
+  if (Array.isArray(entrada.items)) {
+    return entrada.items.some((hija) => contieneActivo(hija, activeId));
+  }
+  return false;
 };
 
 export default function Sidebar({ groups, topItems, activeId, onSelect, colapsado }) {
-  const [abiertos, setAbiertos] = useState(() => {
-    const ids = recopilarIdsContenedores(groups, []);
-    const inicial = {};
-    ids.forEach((id) => { inicial[id] = false; });
-    marcarRutaAbierta(groups, activeId, inicial);
-    return inicial;
-  });
-
-  // Si se navega desde fuera a una vista anidada, se abren en cascada todos
-  // los contenedores por los que hay que pasar para verla (sin cerrar los
-  // que ya estaban abiertos).
-  useEffect(() => {
-    setAbiertos((prev) => {
-      const siguiente = { ...prev };
-      let cambiado = false;
-      const marcar = (entradas) =>
-        entradas.some((entrada) => {
-          if (esContenedor(entrada)) {
-            const encontrado = marcar(entrada.items);
-            if (encontrado && !siguiente[entrada.id]) {
-              siguiente[entrada.id] = true;
-              cambiado = true;
-            }
-            return encontrado;
-          }
-          return entrada.id === activeId;
-        });
-      marcar(groups);
-      return cambiado ? siguiente : prev;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeId, groups]);
-
-  const toggleContenedor = (id) => setAbiertos((prev) => ({ ...prev, [id]: !prev[id] }));
-
-  const contenedorClasses = (depth) => {
-    const base =
-      'w-full flex items-center gap-3 rounded-md !font-medium transition-colors !border-0 !bg-transparent ' +
-      '!text-slate-600 hover:!bg-slate-100 hover:!text-slate-900 dark:!text-slate-300 dark:hover:!bg-slate-800 dark:hover:!text-white' +
-      (colapsado ? ' justify-center px-0' : '');
-    return depth === 0 ? base + ' px-3 py-2 text-sm' : base + ' px-3 py-1.5 text-[13px] gap-2.5';
-  };
-
-  const itemClasses = (activo) =>
-    'w-full flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-left !border-0 transition-colors ' +
-    (activo
-      ? '!bg-wine-soft !text-slate-900 dark:!text-white !font-semibold'
-      : '!bg-transparent !text-slate-500 hover:!bg-slate-100 dark:!text-slate-400 dark:hover:!bg-slate-800');
-
-  const topItemClasses = (activo) =>
-    'w-full flex items-center gap-3 rounded-md px-3 py-2 text-sm !font-medium transition-colors !border-0' +
+  const filaClasses = (activo) =>
+    'w-full flex items-center gap-3 rounded-md px-3 py-1.5 text-sm transition-colors !border-0' +
     (colapsado ? ' justify-center px-0' : '') + ' ' +
     (activo
-      ? '!bg-wine-soft !text-slate-900 dark:!text-white'
-      : '!bg-transparent !text-slate-600 hover:!bg-slate-100 hover:!text-slate-900 dark:!text-slate-300 dark:hover:!bg-slate-800 dark:hover:!text-white');
+      ? '!bg-indigo-50 dark:!bg-indigo-500/15 !text-indigo-700 dark:!text-indigo-300 !font-semibold'
+      : '!bg-transparent !font-medium !text-slate-600 hover:!bg-slate-100 hover:!text-slate-900 dark:!text-slate-300 dark:hover:!bg-slate-800 dark:hover:!text-white');
 
-  // Render recursivo: `entradas` es el array `items` de un grupo o de una
-  // subcategoría; `depth` es 0 para los grupos de nivel superior, 1 para sus
-  // subcategorías/items directos, 2 para los items dentro de una
-  // subcategoría, etc. Devuelve un array de elementos (no un único nodo), se
-  // usa tal cual como hijos de un contenedor flex-col.
-  const renderEntradas = (entradas, depth) =>
-    entradas.map((entrada) => {
-      if (esContenedor(entrada)) {
-        const Icon = entrada.icon;
-        const abierto = !!abiertos[entrada.id];
-        const tamIcono = depth === 0 ? 18 : 14;
-        const tamChevron = depth === 0 ? 16 : 13;
-        return (
-          <div key={entrada.id}>
-            <button
-              type="button"
-              onClick={() => toggleContenedor(entrada.id)}
-              className={contenedorClasses(depth)}
-              title={colapsado ? entrada.label : undefined}
-            >
-              <Icon size={tamIcono} className="shrink-0" />
-              {!colapsado && <span className="flex-1 text-left">{entrada.label}</span>}
-              {!colapsado && (abierto ? <ChevronDown size={tamChevron} /> : <ChevronRight size={tamChevron} />)}
-            </button>
-
-            {!colapsado && abierto && (
-              <div className="ml-3 pl-3 border-l border-slate-200 dark:border-slate-700 flex flex-col gap-0.5 mb-1">
-                {renderEntradas(entrada.items, depth + 1)}
-              </div>
-            )}
-          </div>
-        );
-      }
-
-      const Icon = entrada.icon;
-      return (
-        <button
-          key={entrada.id}
-          type="button"
-          onClick={() => onSelect(entrada.id)}
-          className={itemClasses(activeId === entrada.id)}
-        >
-          <Icon size={15} className="shrink-0" />
-          {entrada.label}
-        </button>
-      );
-    });
+  const iconoClasses = (activo) => (activo ? 'shrink-0 text-indigo-600 dark:text-indigo-400' : 'shrink-0');
 
   return (
-    <div className="flex flex-col gap-1">
-      {renderEntradas(groups, 0)}
+    <div className="flex flex-col gap-0.5">
+      {groups.map((grupo) => {
+        const Icon = grupo.icon;
+        const activo = contieneActivo(grupo, activeId);
+        return (
+          <button
+            key={grupo.id}
+            type="button"
+            onClick={() => onSelect(grupo.id)}
+            className={filaClasses(activo)}
+            title={colapsado ? grupo.label : undefined}
+          >
+            <Icon size={16} className={iconoClasses(activo)} />
+            {!colapsado && <span className="flex-1 text-left">{grupo.label}</span>}
+          </button>
+        );
+      })}
 
-      {topItems.map(({ id, label, icon: Icon }) => (
-        <button
-          key={id}
-          type="button"
-          onClick={() => onSelect(id)}
-          className={topItemClasses(activeId === id)}
-          title={colapsado ? label : undefined}
-        >
-          <Icon size={18} className="shrink-0" />
-          {!colapsado && label}
-        </button>
-      ))}
+      {/* Separador visual entre los grupos y los accesos sueltos (p.ej.
+          Presupuesto y Forecast) — especificación Sergio: "agrupar mejor
+          visualmente los bloques". */}
+      {topItems.length > 0 && (
+        <div className="border-t border-slate-200 dark:border-white/10 my-1" />
+      )}
+
+      {topItems.map(({ id, label, icon: Icon }) => {
+        const activo = activeId === id;
+        return (
+          <button
+            key={id}
+            type="button"
+            onClick={() => onSelect(id)}
+            className={filaClasses(activo)}
+            title={colapsado ? label : undefined}
+          >
+            <Icon size={16} className={iconoClasses(activo)} />
+            {!colapsado && <span className="flex-1 text-left">{label}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }

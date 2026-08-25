@@ -22,13 +22,23 @@
  * (Auditoria.js) para consultar quién hizo cada borrado/restauración/
  * reseteo y cuándo. Ambas son "de toda la cuenta", igual que Mantenimiento:
  * no dependen del distribuidor seleccionado arriba.
+ *
+ * CAMBIO (selector de distribuidor GLOBAL, a petición de Sergio: "lo sigo
+ * viendo un poco lioso" — análisis de IA de julio 2026): `idDistribuidorSel`
+ * y la lista de distribuidores ya NO son estado local de este componente —
+ * antes esta pantalla, "Sell-Out Clientes" y "Sell-Out por Marca" mantenían
+ * cada una su propio distribuidor seleccionado por separado. Ahora ambos
+ * llegan como PROPS desde App.js (ver cabecera de ese archivo) y se
+ * comparten con las otras 2 pantallas — el selector visible se ha movido a
+ * la barra superior (Layout.js), así que aquí ya no se dibuja ningún
+ * `<select>` propio, ni el modal de "Añadir Distribuidor" (también movido a
+ * Layout.js, alcanzable desde cualquier pantalla). `cargarMaestros` ahora
+ * solo carga marcasGlobales — los distribuidores los gestiona App.js.
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  getDistribuidoresPorUsuario,
   getMarcasGlobales,
-  saveNuevoDistribuidor,
   // ¡Nuevas importaciones para cargar datos aquí!
   getHistoricoSellIn,
   getHistoricoSellOut,
@@ -41,7 +51,7 @@ import {
   // Visión Compañía, que lo suma como si fueran compras de Sell-In)
   getStockInicialGeneral
 } from './firebaseApi';
-import { inputClasses, botonInfo, botonExito, botonSecundario, etiqueta, tarjeta, filtroContenedor } from './uiClasses';
+import { tarjeta, filtroContenedor } from './uiClasses';
 import usePestañasVisitadas from './usePestañasVisitadas';
 
 // Importamos las 7 pestañas
@@ -102,16 +112,23 @@ export const PESTAÑAS_GESTION = [
   PESTAÑA_AUDITORIA,
 ];
 
-function PantallaDistribuidor({ idUsuario, pestañaActiva, bloqueadoPorTodos = false }) {
+function PantallaDistribuidor({
+  idUsuario, pestañaActiva, bloqueadoPorTodos = false,
+  idDistribuidorSel, onCambiarDistribuidorSel, listaDistribuidoresGlobal,
+  cargandoDistribuidoresGlobal, onRefrescarDistribuidoresGlobal,
+}) {
 
   // --- ESTADOS ---
-  const [listaDistribuidores, setListaDistribuidores] = useState([]);
+  // listaDistribuidores/idDistribuidorSel ya NO son estado local — ver
+  // comentario de cabecera ("selector de distribuidor GLOBAL"). Se usa el
+  // mismo nombre local `listaDistribuidores` para no tener que renombrar
+  // todas las referencias de más abajo.
+  const listaDistribuidores = listaDistribuidoresGlobal || [];
   const [marcasGlobales, setMarcasGlobales] = useState([]);
-  const [idDistribuidorSel, setIdDistribuidorSel] = useState('');
   // pestañaActiva ya NO es estado local: llega como prop desde App.js/Sidebar
   // (rediseño visual, Fase 3 — ver comentario de las constantes PESTAÑA_*).
   const [cargandoMaestros, setCargandoMaestros] = useState(true);
-  
+
   // --- ¡NUEVOS ESTADOS DE DATOS! ---
   // Estos estados guardarán TODOS los datos brutos del distribuidor
   const [historicoSellIn, setHistoricoSellIn] = useState([]);
@@ -129,32 +146,18 @@ function PantallaDistribuidor({ idUsuario, pestañaActiva, bloqueadoPorTodos = f
   // Cambiar este número forzará una recarga de datos
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  // Estados para el modal de añadir distribuidor
-  const [modalDistriVisible, setModalDistriVisible] = useState(false);
-  const [nombreNuevoDistri, setNombreNuevoDistri] = useState('');
-  const [cargandoDistri, setCargandoDistri] = useState(false);
-
-  // --- CARGA DE DATOS MAESTROS (Marcas y Distribuidores) ---
+  // --- CARGA DE DATOS MAESTROS (solo Marcas — los distribuidores ya llegan
+  // como prop `listaDistribuidoresGlobal` desde App.js, ver comentario de
+  // cabecera) ---
   const cargarMaestros = useCallback(async () => {
     setCargandoMaestros(true);
     try {
-      const [distribuidores, marcas] = await Promise.all([
-        getDistribuidoresPorUsuario(idUsuario),
-        getMarcasGlobales()
-      ]);
-      
-      const distribuidoresOrdenados = distribuidores.sort((a, b) => a.nombre_distribuidor.localeCompare(b.nombre_distribuidor));
+      const marcas = await getMarcasGlobales();
       const marcasOrdenadas = marcas.sort((a, b) => a.nombre_marca.localeCompare(b.nombre_marca));
-
-      setListaDistribuidores(distribuidoresOrdenados);
       setMarcasGlobales(marcasOrdenadas);
-      
-      if (!idDistribuidorSel && distribuidoresOrdenados.length > 0) {
-        setIdDistribuidorSel(distribuidoresOrdenados[0].id);
-      }
     } catch (error) { console.error("Error cargando maestros:", error); }
     setCargandoMaestros(false);
-  }, [idUsuario, idDistribuidorSel]);
+  }, []);
 
   // Carga inicial de maestros
   useEffect(() => {
@@ -232,9 +235,13 @@ function PantallaDistribuidor({ idUsuario, pestañaActiva, bloqueadoPorTodos = f
     setRefreshTrigger(prev => prev + 1);
   };
 
-  // Se pasa a ImportarExcel: refresca maestros (por si creó marcas/distribuidor) y el histórico
+  // Se pasa a ImportarExcel: refresca maestros (por si creó marcas) y el
+  // histórico. Si el Excel importado creó también un distribuidor nuevo, se
+  // refresca además la lista global (App.js) para que aparezca en el
+  // selector de la barra superior.
   const handleImportComplete = () => {
     cargarMaestros();
+    if (onRefrescarDistribuidoresGlobal) onRefrescarDistribuidoresGlobal();
     setRefreshTrigger(prev => prev + 1);
   };
 
@@ -242,31 +249,15 @@ function PantallaDistribuidor({ idUsuario, pestañaActiva, bloqueadoPorTodos = f
   const handleResetApp = () => {
     setHistoricoSellIn([]);
     setHistoricoSellOut([]);
-    setIdDistribuidorSel('');
+    if (onCambiarDistribuidorSel) onCambiarDistribuidorSel('');
+    if (onRefrescarDistribuidoresGlobal) onRefrescarDistribuidoresGlobal();
     setRefreshTrigger(prev => prev + 1);
     cargarMaestros();
   };
-  
+
   // Se pasa a VentasYAP y Compras
   const handleRefrescarMarcas = () => {
-    cargarMaestros(); 
-  };
-  
-  // Lógica de Añadir Distribuidor
-  const handleGuardarNuevoDistribuidor = async () => {
-    if (!nombreNuevoDistri.trim()) { alert("El nombre no puede estar vacío."); return; }
-    setCargandoDistri(true);
-    try {
-      const nuevoDistri = { nombre_distribuidor: nombreNuevoDistri.trim().toUpperCase(), id_usuario: idUsuario };
-      const nuevoId = await saveNuevoDistribuidor(nuevoDistri);
-      const nuevoDistriCompleto = { ...nuevoDistri, id: nuevoId };
-      const nuevaListaOrdenada = [...listaDistribuidores, nuevoDistriCompleto].sort((a, b) => a.nombre_distribuidor.localeCompare(b.nombre_distribuidor));
-      setListaDistribuidores(nuevaListaOrdenada);
-      setIdDistribuidorSel(nuevoId);
-      setModalDistriVisible(false);
-      setNombreNuevoDistri('');
-    } catch (error) { console.error("Error al crear distribuidor:", error); }
-    setCargandoDistri(false);
+    cargarMaestros();
   };
 
   // Memoria de pestañas (ver cabecera del archivo). OJO: tiene que llamarse
@@ -299,70 +290,22 @@ function PantallaDistribuidor({ idUsuario, pestañaActiva, bloqueadoPorTodos = f
     );
   }
 
-  if (cargandoMaestros) {
+  if (cargandoMaestros || cargandoDistribuidoresGlobal) {
     return <div>Cargando datos maestros...</div>;
   }
 
-  // "Control A&P" y "Control A&P (Visión Compañía)" tienen su PROPIO
-  // selector "Distribuidor(es)" (uno, varios o todos), ya que trabajan sobre
-  // el histórico GENERAL de todos los distribuidores, no sobre el de uno
-  // solo. Mostrar ADEMÁS este selector principal ahí era redundante y
-  // confuso (dos controles de "distribuidor" en la misma pantalla, cuando
-  // el de abajo ya cubre — y amplía — lo que hace el de arriba). Se oculta
-  // solo en esas dos pestañas, y solo si ya hay al menos un distribuidor
-  // creado: si la lista está vacía, se sigue mostrando (con su placeholder
-  // "-- Añada un distribuidor --" y el botón "+ Añadir Distribuidor") porque
-  // es la única forma de dar de alta el primero.
-  const esPestañaControlAP = pestañaActiva === PESTAÑA_CONTROL_AP || pestañaActiva === PESTAÑA_CONTROL_AP_VISION_COMERCIAL;
-  const ocultarSelectorPrincipal = esPestañaControlAP && listaDistribuidores.length > 0;
-
   return (
     <div>
-      {/* 1. SELECTOR PRINCIPAL */}
-      {!ocultarSelectorPrincipal && (
+      {/* El selector "Gestionando al Distribuidor" y el modal de "+ Añadir
+          Distribuidor" (antes dibujados aquí arriba) ahora viven en la barra
+          superior (Layout.js) — ver comentario de cabecera ("selector de
+          distribuidor GLOBAL"). Si todavía no hay ningún distribuidor dado
+          de alta, se avisa aquí mismo dónde crearlo. */}
+      {listaDistribuidores.length === 0 && (
         <div className={`${filtroContenedor} mb-5`}>
-          <label className={etiqueta}>Gestionando al Distribuidor:</label>
-          <select
-            value={idDistribuidorSel}
-            onChange={(e) => setIdDistribuidorSel(e.target.value)}
-            className={`${inputClasses} flex-1 min-w-[200px]`}
-          >
-            {listaDistribuidores.length === 0 ? (
-               <option value="">-- Añada un distribuidor --</option>
-            ) : (
-              listaDistribuidores.map(d => (
-                <option key={d.id} value={d.id}>{d.nombre_distribuidor}</option>
-              ))
-            )}
-          </select>
-          <button onClick={() => setModalDistriVisible(true)} className={botonInfo}>
-            + Añadir Distribuidor
-          </button>
-        </div>
-      )}
-
-      {/* MODAL para añadir distribuidor */}
-      {modalDistriVisible && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-lg">
-            <h4 className="text-base font-medium text-slate-900 dark:text-white mb-4">Añadir Nuevo Distribuidor</h4>
-            <label className={etiqueta}>Nombre del Nuevo Distribuidor:</label>
-            <input
-              type="text"
-              value={nombreNuevoDistri}
-              onChange={(e) => setNombreNuevoDistri(e.target.value)}
-              placeholder="Nombre del nuevo distribuidor"
-              className={`${inputClasses} w-full mt-1.5 mb-4`}
-            />
-            <div className="flex gap-2 justify-end">
-              <button onClick={() => setModalDistriVisible(false)} disabled={cargandoDistri} className={botonSecundario}>
-                Cancelar
-              </button>
-              <button onClick={handleGuardarNuevoDistribuidor} disabled={cargandoDistri} className={botonExito}>
-                {cargandoDistri ? 'Guardando...' : 'Guardar'}
-              </button>
-            </div>
-          </div>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Todavía no hay ningún distribuidor. Usa el selector de la barra superior ("+ Nuevo distribuidor") para dar de alta el primero.
+          </p>
         </div>
       )}
 

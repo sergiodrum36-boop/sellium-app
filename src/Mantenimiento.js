@@ -10,7 +10,7 @@
  */
 
 import React, { useState } from 'react';
-import { resetUserHistory } from './firebaseApi';
+import { resetUserHistory, resetSellOutClientesTodo } from './firebaseApi';
 import { auth } from './firebaseConfig';
 import { inputClasses, etiqueta } from './uiClasses';
 
@@ -18,6 +18,9 @@ function Mantenimiento({ idUsuario, onResetApp }) {
 
     const [cargando, setCargando] = useState(false);
     const [confirmacion, setConfirmacion] = useState(''); // Estado para la palabra de seguridad
+
+    const [cargandoSellOutClientes, setCargandoSellOutClientes] = useState(false);
+    const [confirmacionSellOutClientes, setConfirmacionSellOutClientes] = useState('');
 
     const handleReset = async () => {
 
@@ -55,6 +58,39 @@ Sus distribuidores y marcas se han conservado. Puede recuperar registros concret
         setCargando(false);
     };
 
+    const handleResetSellOutClientes = async () => {
+
+        if (confirmacionSellOutClientes.toUpperCase() !== "BORRAR") {
+            alert("Por favor, escriba la palabra BORRAR en el campo de texto para confirmar.");
+            return;
+        }
+
+        if (!window.confirm("Está a punto de mover a la papelera TODOS los clientes y movimientos de Sell-Out por Cliente Final de TODOS sus distribuidores. No se borran de forma permanente. Podrá recuperar registros concretos desde \"Papelera\" si fue un error. ¿Continuar?")) {
+            return;
+        }
+
+        setCargandoSellOutClientes(true);
+        try {
+            const resultados = await resetSellOutClientesTodo(idUsuario, {
+                uid: auth.currentUser?.uid,
+                email: auth.currentUser?.email
+            });
+
+            setConfirmacionSellOutClientes('');
+
+            alert(`✅ Reseteo completado con éxito. Se movieron a la papelera:
+- ${resultados.movimientos || 0} movimiento(s) de Sell-Out por Cliente Final.
+- ${resultados.clientes || 0} cliente(s) final(es).
+
+Sus distribuidores y marcas se han conservado. Puede recuperar registros concretos desde "Papelera" (Herramientas).`);
+
+        } catch (error) {
+            console.error("Error al resetear el Sell-Out por Cliente Final:", error);
+            alert("ERROR CRÍTICO: No se pudo conectar o borrar los datos. Revise su conexión.");
+        }
+        setCargandoSellOutClientes(false);
+    };
+
     return (
         <div>
             <h2 className="text-lg font-medium text-slate-900 dark:text-white mb-4">Mantenimiento y Limpieza de Datos</h2>
@@ -89,6 +125,40 @@ Sus distribuidores y marcas se han conservado. Puede recuperar registros concret
                     className="!bg-red-600 hover:!bg-red-700 disabled:!bg-red-300 dark:disabled:!bg-red-900 !text-white !border-0 !font-semibold px-5 py-2.5 rounded-md text-sm"
                 >
                     {cargando ? 'Borrando...' : 'BORRAR TODO EL CONTENIDO'}
+                </button>
+            </div>
+
+            <div className="border border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10 rounded-xl p-5 max-w-2xl mt-5">
+                <h4 className="text-red-700 dark:text-red-400 font-semibold mb-3">⚠️ Borrar TODO el Sell-Out por Cliente Final (todos los distribuidores)</h4>
+
+                <p className="text-sm text-slate-700 dark:text-slate-300 mb-2">
+                    Esta acción mueve a la <strong>papelera</strong> todos los clientes finales y sus movimientos de Sell-Out por Cliente Final, de <strong>todos sus distribuidores</strong> — no los borra de forma permanente. Sus distribuidores, marcas y el resto de históricos (Sell-In/Sell-Out normal) NO se tocan.
+                </p>
+                <p className="text-sm text-slate-700 dark:text-slate-300">
+                    Si solo quieres borrar los datos de UN distribuidor concreto, hazlo desde "Sell-Out por Cliente Final" eligiendo ese distribuidor.
+                </p>
+
+                <hr className="border-red-200 dark:border-red-500/30 my-5" />
+
+                <div className="mb-4 flex items-center gap-2">
+                    <label className={etiqueta}>
+                        Escriba BORRAR para confirmar:
+                    </label>
+                    <input
+                        type="text"
+                        value={confirmacionSellOutClientes}
+                        onChange={(e) => setConfirmacionSellOutClientes(e.target.value)}
+                        className={`${inputClasses} !border-red-400 dark:!border-red-500/60`}
+                        disabled={cargandoSellOutClientes}
+                    />
+                </div>
+
+                <button
+                    onClick={handleResetSellOutClientes}
+                    disabled={cargandoSellOutClientes || confirmacionSellOutClientes.toUpperCase() !== "BORRAR"}
+                    className="!bg-red-600 hover:!bg-red-700 disabled:!bg-red-300 dark:disabled:!bg-red-900 !text-white !border-0 !font-semibold px-5 py-2.5 rounded-md text-sm"
+                >
+                    {cargandoSellOutClientes ? 'Borrando...' : 'BORRAR TODO EL SELL-OUT POR CLIENTE'}
                 </button>
             </div>
         </div>

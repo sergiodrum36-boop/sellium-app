@@ -28,6 +28,30 @@ jobs:
         # tolerante y actualiza el lock si hace falta.
         run: npm install
 
+      - name: Ejecutar tests (Jest)
+        # Bloque 2 de la profesionalizacion (2026-07-25): tests de la logica
+        # de negocio que no puede fallar en silencio (calculosAP.js,
+        # matching.js, alertas.js, agregacionSellOutPorPeriodo.js). A
+        # diferencia del lint (paso siguiente), ESTE paso SI bloquea el
+        # deploy si algo falla -- son tests deterministas y nuevos, pensados
+        # para no dar falsos positivos.
+        run: npm test -- --watchAll=false
+        env:
+          CI: true
+
+      - name: Revisar avisos de ESLint (no bloquea el deploy todavia)
+        # No se ha podido medir en el sandbox de Claude cuantos warnings de
+        # ESLint arrastra ya el resto de la app (el proceso se queda colgado
+        # sin red al intentarlo ahi) -- por eso este paso es informativo por
+        # ahora ("continue-on-error"), no bloqueante: si tuviera muchos
+        # avisos previos, un gate estricto de golpe rompería el deploy sin
+        # avisar. Revisa el resultado de este paso en la pestaña Actions; en
+        # cuanto confirmes cuantos avisos hay y cuales quieres corregir,
+        # cambia "continue-on-error: true" a "false" para que sea un gate de
+        # verdad.
+        run: npx eslint src --ext .js,.jsx
+        continue-on-error: true
+
       - name: Generar la version de produccion (build)
         # CI=false: por defecto, GitHub Actions define CI=true, y
         # Create React App con CI=true convierte los "warnings" de ESLint

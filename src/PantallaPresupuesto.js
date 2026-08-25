@@ -92,7 +92,36 @@ const formateadorNumero = new Intl.NumberFormat('es-ES');
 // gráfico — la tabla de detalle debajo sí las lista todas).
 const MAX_MARCAS_GRAFICO = 12;
 
+// Detecta si el modo oscuro (clase "dark" en <html>, gestionada por
+// Layout.js) está activo — mismo patrón que PantallaDashboard.js/
+// PantallaDashboardAPCompania.js/DashboardVentasReales.js.
+// CAMBIO (Fase 8, especificación Sergio: "algunos elementos se mezclan con
+// el fondo oscuro" en los gráficos): los 2 gráficos de esta pantalla no
+// tenían NINGÚN color de eje/rejilla propio (usaban el negro por defecto de
+// Recharts, pensado para fondo claro) — de los 4 archivos con gráficos de la
+// app, este era el único sin esta protección. Se añade aquí el mismo hook y
+// las mismas variables colorEje/colorGrid que ya usan los otros 3.
+function useDarkMode() {
+  const [isDark, setIsDark] = useState(() =>
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+  );
+  useEffect(() => {
+    const el = document.documentElement;
+    const actualizar = () => setIsDark(el.classList.contains('dark'));
+    const obs = new MutationObserver(actualizar);
+    obs.observe(el, { attributes: true, attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
+  return isDark;
+}
+
 function PantallaPresupuesto({ idUsuario, bloqueadoPorTodos = false }) {
+  // NOTA: colorEje/colorGrid (useDarkMode) NO se calculan aquí — este
+  // componente no dibuja ningún gráfico directamente, solo renderiza
+  // <PestañaObjetivo> o <PestañaForecast> (más abajo en este archivo), que
+  // son funciones HERMANAS (no anidadas) y por tanto necesitan su propia
+  // copia de esas variables. Ver el useDarkMode()/colorEje/colorGrid dentro
+  // de PestañaForecast, que es donde de verdad se usan.
 
   const [pestañaInterna, setPestañaInterna] = useState('OBJETIVO'); // 'OBJETIVO' | 'FORECAST'
   const [listaDistribuidores, setListaDistribuidores] = useState([]);
@@ -139,14 +168,14 @@ function PantallaPresupuesto({ idUsuario, bloqueadoPorTodos = false }) {
         <button
           type="button"
           onClick={() => setPestañaInterna('OBJETIVO')}
-          className={`px-4 py-2 text-sm font-semibold !border-0 !bg-transparent rounded-none border-b-2 ${pestañaInterna === 'OBJETIVO' ? 'border-wine text-slate-900 dark:text-white' : 'border-transparent text-slate-500 dark:text-slate-400'}`}
+          className={`px-4 py-2 text-sm font-semibold !border-0 !bg-transparent rounded-none border-b-2 ${pestañaInterna === 'OBJETIVO' ? 'border-indigo-600 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 dark:text-slate-400'}`}
         >
           Objetivo Anual
         </button>
         <button
           type="button"
           onClick={() => setPestañaInterna('FORECAST')}
-          className={`px-4 py-2 text-sm font-semibold !border-0 !bg-transparent rounded-none border-b-2 ${pestañaInterna === 'FORECAST' ? 'border-wine text-slate-900 dark:text-white' : 'border-transparent text-slate-500 dark:text-slate-400'}`}
+          className={`px-4 py-2 text-sm font-semibold !border-0 !bg-transparent rounded-none border-b-2 ${pestañaInterna === 'FORECAST' ? 'border-indigo-600 text-slate-900 dark:text-white' : 'border-transparent text-slate-500 dark:text-slate-400'}`}
         >
           Forecast
         </button>
@@ -593,6 +622,16 @@ function PestañaObjetivo({ idUsuario, listaDistribuidores, anoActual, ventasRea
 // PESTAÑA "FORECAST"
 // ==========================================================================
 function PestañaForecast({ idUsuario, listaDistribuidores, anoActual, ventasReales, historicoSellOut }) {
+  // FIX (build roto tras el cambio de Fase 8): colorEje/colorGrid se habían
+  // definido solo en PantallaPresupuesto (arriba), pero los 2 gráficos con
+  // esa variable viven en ESTE componente (PestañaForecast) — una función
+  // hermana, no anidada, así que no heredaba esas variables. useDarkMode()
+  // es una función normal (no un Context), así que se puede llamar aquí
+  // también sin problema.
+  const modoOscuro = useDarkMode();
+  const colorEje = modoOscuro ? '#cbd5e1' : '#6b7280';
+  const colorGrid = modoOscuro ? '#475569' : '#e5e7eb';
+
   const [anio, setAnio] = useState(anoActual);
   const [idDistribuidor, setIdDistribuidor] = useState(''); // '' = Todos sus distribuidores
   const [cargando, setCargando] = useState(true);
@@ -805,13 +844,17 @@ function PestañaForecast({ idUsuario, listaDistribuidores, anoActual, ventasRea
               </h4>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={datosGraficoFacturacion} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="marca" tick={{ fontSize: 10 }} interval={0} angle={-25} textAnchor="end" height={70} />
-                  <YAxis tickFormatter={(v) => formateadorMonedaCorta.format(v)} tick={{ fontSize: 11 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={colorGrid} />
+                  <XAxis dataKey="marca" tick={{ fill: colorEje, fontSize: 10 }} stroke={colorGrid} interval={0} angle={-25} textAnchor="end" height={70} />
+                  <YAxis tickFormatter={(v) => formateadorMonedaCorta.format(v)} tick={{ fill: colorEje, fontSize: 11 }} stroke={colorGrid} />
                   <Tooltip formatter={(value) => formateadorMoneda.format(value)} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="objetivo" fill="#C9A227" name="Objetivo" radius={[3, 3, 0, 0]} />
-                  <Bar dataKey="real" fill="#A13D52" name="Real" radius={[3, 3, 0, 0]} />
+                  <Legend wrapperStyle={{ fontSize: 12, color: colorEje }} />
+                  {/* Colores unificados con el otro gráfico de esta misma pantalla
+                      (especificación Sergio: "paleta más consistente" — antes
+                      dorado/wine aquí y azul/rojo en el otro, misma comparación
+                      "Objetivo vs Real" con 2 lenguajes de color distintos). */}
+                  <Bar dataKey="objetivo" fill="#6366F1" name="Objetivo" radius={[3, 3, 0, 0]} />
+                  <Bar dataKey="real" fill="#EF4444" name="Real" radius={[3, 3, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -822,11 +865,11 @@ function PestañaForecast({ idUsuario, listaDistribuidores, anoActual, ventasRea
               </h4>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={datosGraficoAp} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="marca" tick={{ fontSize: 10 }} interval={0} angle={-25} textAnchor="end" height={70} />
-                  <YAxis tickFormatter={(v) => formateadorMonedaCorta.format(v)} tick={{ fontSize: 11 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={colorGrid} />
+                  <XAxis dataKey="marca" tick={{ fill: colorEje, fontSize: 10 }} stroke={colorGrid} interval={0} angle={-25} textAnchor="end" height={70} />
+                  <YAxis tickFormatter={(v) => formateadorMonedaCorta.format(v)} tick={{ fill: colorEje, fontSize: 11 }} stroke={colorGrid} />
                   <Tooltip formatter={(value) => formateadorMoneda.format(value)} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Legend wrapperStyle={{ fontSize: 12, color: colorEje }} />
                   <Bar dataKey="objetivo" fill="#6366F1" name="Objetivo" radius={[3, 3, 0, 0]} />
                   <Bar dataKey="real" fill="#EF4444" name="Real" radius={[3, 3, 0, 0]} />
                 </BarChart>

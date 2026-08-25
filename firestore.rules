@@ -115,6 +115,52 @@ service cloud.firestore {
       allow delete: if request.auth != null;
     }
 
+    // --- SELL-OUT DETALLE POR CLIENTE FINAL (a petición de Sergio) ---
+    // Maestro de clientes finales por distribuidor + detalle línea a línea de
+    // sus compras. Mismo patrón privado-por-usuario que el resto de
+    // colecciones transaccionales; cualquier corrección de un dato de negocio
+    // sigue siendo "borrar + recrear" (ver firebaseApi.js, sección 21).
+    // CAMBIO (borrado a papelera de todo el módulo, a petición de Sergio,
+    // 2026-07-18): se añade `allow update` acotado a solo los 3 campos de
+    // papelera (mismo `esSoloCambioPapelera()` que historicoSellIn/
+    // historicoSellOut) para poder borrar (recuperable) los datos de un
+    // distribuidor o de toda la cuenta desde DashboardSellOutClientes.js /
+    // Mantenimiento.js — ver resetSellOutClientesPorDistribuidor /
+    // resetSellOutClientesTodo en firebaseApi.js.
+    //
+    // CAMBIO (Geolocalización, 26/07/2026, a petición de Sergio: "visión de
+    // mancha de aceite con clientes por zonas"): también se permite editar
+    // IN-PLACE `direccion`/`latitud`/`longitud`/`id_zona` — a diferencia del
+    // resto de correcciones de esta app (borrar+crear), aquí NO se puede
+    // hacer así porque `movimientosSellOutClientes.id_cliente` referencia a
+    // estos documentos POR ID (ver sellOutClientes.js): borrar y recrear un
+    // cliente para geolocalizarlo dejaría huérfanas todas sus líneas de venta
+    // ya importadas. `esCambioGeolocalizacionCliente()` acota qué campos
+    // puede tocar esta vía nueva, igual que `esSoloCambioPapelera()` acota la
+    // suya — nunca se mezclan en una misma escritura.
+    match /clientesSellOut/{docId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+      allow update: if request.auth != null && request.auth.uid == resource.data.id_usuario
+                    && (esSoloCambioPapelera() || esCambioGeolocalizacionCliente());
+    }
+    match /movimientosSellOutClientes/{docId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+      allow update: if request.auth != null && request.auth.uid == resource.data.id_usuario && esSoloCambioPapelera();
+    }
+    // --- MEMORIA DE RECONCILIACIÓN PRODUCTO->MARCA DEL IMPORTADOR DE SELL-OUT
+    // POR CLIENTE (mismo motivo/patrón que mapeoImportacion, a petición de
+    // Sergio: para no tener que reajustar a mano las marcas de cada producto
+    // en cada reimportación del mismo distribuidor) ---
+    match /aliasProductosSellOut/{docId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+
     // --- AUDITORÍA (registro inmutable de acciones: borrar/restaurar/
     // eliminar definitivo/resetear historial) ---
     // Solo se puede crear (nunca editar ni borrar, ni siquiera un manager)
@@ -138,6 +184,176 @@ service cloud.firestore {
       allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
     }
 
+    // --- RAPEL DISTRIBUIDORES (26/07/2026, primera pieza de "Acuerdos con
+    // clientes/distribuidores" — a petición de Sergio) — un documento por
+    // (id_usuario, anio, id_distribuidor), igual que presupuestos: sin
+    // `allow update`, corregir una configuración ya guardada es borrar ese
+    // documento y crear uno nuevo (ver firebaseApi/rapelDistribuidores.js).
+    // `id_distribuidor: null` es la plantilla GLOBAL de ese año (tramos +
+    // catálogo de bonificaciones); un documento con `id_distribuidor` puesto
+    // es la excepción de un distribuidor concreto ese mismo año (tramos
+    // personalizados y/o qué bonificaciones tiene activas) — Sergio: "para
+    // todos igual pero a algunos se puede agregar/modificar/quitar según el
+    // grado de colaboración".
+    match /configuracionRapelDistribuidores/{docId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+
+    // --- ACUERDOS CON CLIENTES (27/07/2026, SEGUNDA pieza de "Acuerdos con
+    // clientes/distribuidores", después de Rapel Distribuidores) — un
+    // documento por acuerdo (cliente final + distribuidor + vigencia +
+    // referencias + aportaciones adicionales). Mismo patrón que
+    // configuracionRapelDistribuidores: privado por usuario, sin
+    // `allow update` — corregir un acuerdo ya guardado es borrar ese
+    // documento y crear uno nuevo (ver
+    // firebaseApi/acuerdosClientes.js/editarAcuerdoCliente).
+    match /acuerdosClientes/{docId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+
+    // --- TARIFA DE MARCAS (27/07/2026, PVP+IVA de referencia por marca) —
+    // catálogo GLOBAL compartido por todos los usuarios, mismo patrón que
+    // `marcas`/`tipologiasMarca`: cualquiera autenticado puede leer/crear/
+    // borrar (corregir un precio ya guardado es borrar + crear, ver
+    // firebaseApi/tarifaMarcas.js).
+    match /tarifaMarcas/{docId} {
+      allow read, create, delete: if request.auth != null;
+    }
+
+    // --- ESTRUCTURA COMERCIAL (CRM: zonas + comerciales/preventistas, a
+    // petición de Sergio: primer bloque de la nueva parte "CRM/planificación
+    // comercial" de la app) — mismo patrón privado-por-usuario que
+    // distribuidores: sin `allow update`. Corregir un comercial o una zona ya
+    // creados es "borrar + crear uno nuevo" (ver
+    // firebaseApi/estructuraComercial.js), igual que el resto de maestros de
+    // la app (marcas, distribuidores). Son la base sobre la que colgarán los
+    // próximos módulos (acuerdos con clientes, planificación de visitas,
+    // geolocalización, avisos de consumo).
+    match /zonas/{docId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+    match /comerciales/{docId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+
+    // --- ESTRUCTURA COMERCIAL, EN EL SENTIDO REAL DE SERGIO (26/07/2026):
+    // clasificación de distribuidores (criterios A-E editables) y su peso
+    // dentro de la cartera de cada comercial, para decidir cuántas visitas
+    // trimestrales necesita cada uno. "asignacionesComercial" se corrige con
+    // borrar+crear (ver firebaseApi/clasificacionComercial.js:
+    // guardarAsignacionComercial), igual que el resto de la app.
+    //
+    // EXCEPCIÓN (segunda de todo el proyecto, junto con la papelera):
+    // "criteriosComercial" SÍ permite `allow update`, acotado por código a
+    // los 6 campos de contenido (`codigo`, `nombre`, `descripcion`,
+    // `frecuencia_dias`, `porcentaje_trimestre`, `sin_visita`) — ver
+    // `esSoloCamposEditablesCriterio()`.
+    // `porcentaje_trimestre` (26/07/2026, 2º ajuste del generador de
+    // calendario, ver planificacionComercial.js): sustituye a
+    // `frecuencia_dias` como base del cálculo — `frecuencia_dias` se deja en
+    // el documento sin usar (dato legacy, no se borra) porque calcular la
+    // frecuencia de UN distribuidor de forma aislada, sin mirar cuántos más
+    // comparten su mismo criterio, se rompía en la práctica: pocos
+    // distribuidores en un criterio con una frecuencia agresiva acababan
+    // acaparando el trimestre entero. `porcentaje_trimestre` es el % de los
+    // días laborables del trimestre que le corresponde a ESE criterio
+    // (compartido entre todos sus distribuidores, repartido según su peso de
+    // facturación) — así un criterio con pocos distribuidores no cambia el
+    // total de días que le tocan, solo cómo se reparten entre ellos.
+    // `sin_visita` (mismo día, criterio "F" de Sergio: distribuidores que se
+    // gestionan solo por teléfono/promoción, nunca con visita física) hace
+    // que el generador de calendario ignore ese criterio pase lo que pase
+    // con `porcentaje_trimestre`. Motivo de la excepción de `allow update`: a
+    // diferencia de marcas/distribuidores (cuyas correcciones son
+    // borrar+crear porque nada más los referencia por id), un criterio SÍ
+    // está referenciado por id desde `asignacionesComercial.id_criterio`
+    // (Sergio ya había clasificado sus distribuidores cuando se añadió
+    // `frecuencia_dias`, ver PantallaPlanificacionComercial.js) — borrar y
+    // recrear el criterio para editarlo dejaría esas asignaciones ya hechas
+    // "sin clasificar" de la noche a la mañana. `id_usuario` no está en la
+    // lista de campos editables: la propiedad del documento es inmutable.
+    match /criteriosComercial/{docId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+      allow update: if request.auth != null && request.auth.uid == resource.data.id_usuario && esSoloCamposEditablesCriterio();
+    }
+    match /asignacionesComercial/{docId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+
+    // --- PLANIFICACIÓN COMERCIAL (calendario de visitas trimestral, a
+    // petición de Sergio, 26/07/2026: siguiente módulo tras clasificar
+    // cartera+criterios en Estructura Comercial) — colección
+    // "visitasComerciales", un documento por visita planificada. Mismo
+    // patrón privado-por-usuario sin `allow update`: "cerrar" una visita
+    // (marcarla hecha, fecha real, nota), moverla de día (arrastrar en el
+    // calendario visual) y confirmarla/quitarla de la Agenda Comercial son
+    // TODO borrar+crear, igual que el resto — aquí SÍ es seguro (a
+    // diferencia de criteriosComercial de arriba) porque ninguna otra
+    // colección referencia una visita por id. El campo `confirmada` (bool)
+    // es lo único que distingue una visita "de la Agenda" — no hay una
+    // colección aparte para eso, ver firebaseApi/planificacionComercial.js.
+    match /visitasComerciales/{docId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+    }
+
+    // --- CATÁLOGOS DE AGENDA (Medio y Objetivo de una visita, 26/07/2026:
+    // Sergio enseñó capturas de otro CRM — "Wolf CRM" — donde al crear una
+    // acción se elige un "Medio" (Teléfono, Visita Delegado, Email...) y un
+    // "Objetivo" (Venta, Prospección, Reunión...); pidió algo parecido pero
+    // MÁS simple ("ahi quizas hay demasiada inf innecesaria") y editable
+    // ("opcion editable o de agregar nuevas o borrar"). Una sola colección
+    // para los dos catálogos (discriminados por `tipo: 'medio'|'objetivo'`)
+    // en vez de dos colecciones casi idénticas — son listas de una sola
+    // línea (nombre + orden), no justifican duplicar todo un módulo.
+    // `visitasComerciales.medio`/`.objetivo` guardan el NOMBRE tal cual
+    // (string plano, no una referencia por id) — igual que el resto del
+    // proyecto evita referenciar por id salvo que sea imprescindible (ver
+    // criteriosComercial más abajo, que si lo necesita): así, editar o
+    // borrar una opción del catálogo nunca deja huérfana a una visita ya
+    // creada con ese texto. Por eso SÍ se permite `allow update` acotado a
+    // `nombre`/`orden` (edición in-place real, no borrar+crear) sin ningún
+    // riesgo — nada más referencia estos documentos por id.
+    match /catalogosAgenda/{docId} {
+      allow read: if request.auth != null && (request.auth.uid == resource.data.id_usuario || esManager());
+      allow delete: if request.auth != null && request.auth.uid == resource.data.id_usuario;
+      allow create: if request.auth != null && request.auth.uid == request.resource.data.id_usuario;
+      allow update: if request.auth != null && request.auth.uid == resource.data.id_usuario && esSoloCamposEditablesCatalogoAgenda();
+    }
+
+    // --- ACTIVIDADES DE AGENDA (26/07/2026: Sergio pidió poder marcar en la
+    // Agenda días que no son trabajo con un distribuidor — Trabajo
+    // administrativo, Vacaciones, Asuntos propios, Reunión comercial,
+    // Prospección — y dejó claro que esta lista, a diferencia de Medio y
+    // Objetivo, NO debe poder tocarla cualquier usuario: "si mañana lo usa
+    // más gente ellos no podrán manipularlo". Por eso este catálogo es
+    // GLOBAL (sin id_usuario, todos leen la misma lista, igual que "marcas")
+    // y solo un manager puede crear/borrar/renombrar sus opciones — la
+    // pantalla de Configuración que lo edita solo se muestra en el menú si
+    // esManager() es true en el cliente, pero la autorización real (como
+    // siempre) la hace esta regla en el servidor. Igual que catalogosAgenda,
+    // el nombre se guarda como texto plano en cada visita (visita.actividad),
+    // nunca como referencia por id, así que la edición in-place es segura.
+    match /actividadesAgenda/{docId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && esManager();
+      allow delete: if request.auth != null && esManager();
+      allow update: if request.auth != null && esManager() && esSoloCamposEditablesActividadAgenda();
+    }
+
     // Devuelve true si el usuario autenticado tiene rol 'manager' en
     // usuarios/{uid}. Usa get() (una lectura extra a Firestore por regla
     // evaluada), el patrón estándar para "roles" en reglas de Firestore
@@ -155,6 +371,40 @@ service cloud.firestore {
     function esSoloCambioPapelera() {
       return request.resource.data.diff(resource.data).affectedKeys()
         .hasOnly(['eliminado', 'eliminado_en', 'eliminado_por']);
+    }
+
+    // Edición in-place de la geolocalización de un cliente final
+    // (clientesSellOut) — ver el aviso junto a esa colección de por qué NO
+    // es borrar+crear aquí.
+    function esCambioGeolocalizacionCliente() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['direccion', 'latitud', 'longitud', 'id_zona']);
+    }
+
+    // Edición in-place de un criterio de clasificación: true solo si la
+    // escritura cambia EXCLUSIVAMENTE campos de contenido del criterio
+    // (nunca `id_usuario`, la propiedad del documento). Ver el porqué de
+    // esta excepción en el comentario de `criteriosComercial` más arriba.
+    function esSoloCamposEditablesCriterio() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['codigo', 'nombre', 'descripcion', 'frecuencia_dias', 'porcentaje_trimestre', 'sin_visita', 'orden']);
+    }
+
+    // Edición in-place de un catálogo de Agenda (Medio/Objetivo): solo
+    // `nombre` y `orden` son editables, nunca `id_usuario` ni `tipo` (cambiar
+    // el tipo convertiría un "medio" en "objetivo" con el mismo id, algo que
+    // no tiene sentido — para eso se borra y se crea uno nuevo del tipo
+    // correcto).
+    function esSoloCamposEditablesCatalogoAgenda() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['nombre', 'orden']);
+    }
+
+    // Edición in-place del catálogo global de Actividades de Agenda: mismo
+    // acotamiento que arriba, solo nombre/orden.
+    function esSoloCamposEditablesActividadAgenda() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['nombre', 'orden']);
     }
   }
 }

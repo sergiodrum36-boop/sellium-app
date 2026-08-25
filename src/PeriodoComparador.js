@@ -43,6 +43,21 @@
  * no cambia nada. En el Dashboard de Gestión se usan para arrancar en "Año
  * completo" + "Solo <año actual>", que es el valor por defecto que ya tenía
  * esa pantalla antes de este cambio.
+ *
+ * CAMBIO 4 (a petición de Sergio, 2026-08-25): dentro de "Varios meses", el
+ * usuario tenía que marcar mes a mes cualquier rango consecutivo (p.ej. 7
+ * clics para Enero-Julio). Se añade un atajo "Desde / Hasta" — dos
+ * desplegables — que RELLENA de golpe los botones de mes de ese tramo
+ * (reemplazando la selección de meses anterior). Sigue siendo exactamente el
+ * mismo estado `mesesElegidos` de siempre: tras aplicar el rango, el usuario
+ * puede seguir tocando botones individuales para añadir/quitar meses sueltos
+ * (p.ej. rango Ene-Jul y además Diciembre). No es un modo nuevo, es solo una
+ * forma más rápida de rellenar el que ya existía. Este componente es
+ * COMPARTIDO por las 5 pantallas que dejan elegir Mes/Trimestre/Semestre/
+ * Año — DashboardVentasReales.js, PantallaDashboard.js,
+ * PantallaDashboardAPCompania.js, DashboardSellOutClientes.js y
+ * DashboardSellOutMarcas.js — así que el atajo aparece en las 5 sin tocar
+ * nada más (ver [[feedback_reuse_shared_components]]).
  */
 
 import { useState, useEffect } from 'react';
@@ -78,6 +93,11 @@ export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInic
   const [semestresElegidos, setSemestresElegidos] = useState(() => new Set([0]));
   const [mesesElegidos, setMesesElegidos] = useState(() => new Set([new Date().getMonth()]));
   const [anios, setAnios] = useState(() => new Set(aniosIniciales || aniosDisponibles.slice(-2)));
+  // Atajo "Desde / Hasta" dentro de "Varios meses" (ver CAMBIO 4). Solo
+  // controla el desplegable en sí — el resultado sigue viviendo en
+  // `mesesElegidos`, igual que si el usuario hubiera tocado cada botón.
+  const [desdeMes, setDesdeMes] = useState('');
+  const [hastaMes, setHastaMes] = useState('');
 
   // `meses` es siempre un array de índices 0-11, sea cual sea el tipo — así
   // el padre solo necesita saber filtrar "¿este mes está en la lista?",
@@ -110,6 +130,20 @@ export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInic
     });
   }
 
+  // Aplica el atajo "Desde / Hasta": si ambos desplegables tienen un mes
+  // válido y Desde no es posterior a Hasta, sustituye `mesesElegidos` por
+  // todo el tramo (inclusive). Se llama automáticamente al cambiar cualquiera
+  // de los dos desplegables — sin botón "Aplicar" aparte, igual que el resto
+  // de selects de este componente.
+  function aplicarRango(nuevoDesde, nuevoHasta) {
+    if (nuevoDesde === '' || nuevoHasta === '') return;
+    const d = Number(nuevoDesde), h = Number(nuevoHasta);
+    if (d > h) return;
+    const rango = [];
+    for (let m = d; m <= h; m++) rango.push(m);
+    setMesesElegidos(new Set(rango));
+  }
+
   function toggleTrimestre(i) {
     setTrimestresElegidos(prev => {
       const next = new Set(prev);
@@ -138,7 +172,7 @@ export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInic
             type="button"
             onClick={() => setTipo(t.id)}
             className={`px-3.5 py-1.5 rounded-full text-[13px] font-semibold !border-0 transition-colors
-              ${tipo === t.id ? 'bg-wine-soft !text-slate-900 dark:!text-white' : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}
+              ${tipo === t.id ? 'bg-indigo-50 dark:bg-indigo-500/15 !text-indigo-700 dark:!text-indigo-300' : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}
           >
             {t.label}
           </button>
@@ -163,7 +197,7 @@ export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInic
                 type="button"
                 onClick={() => toggleTrimestre(i)}
                 className={`px-3 py-1.5 rounded-full text-[12.5px] font-semibold !border-0 transition-colors
-                  ${trimestresElegidos.has(i) ? 'bg-wine-soft !text-slate-900 dark:!text-white' : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}
+                  ${trimestresElegidos.has(i) ? 'bg-indigo-50 dark:bg-indigo-500/15 !text-indigo-700 dark:!text-indigo-300' : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}
               >
                 {label}
               </button>
@@ -183,7 +217,7 @@ export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInic
                 type="button"
                 onClick={() => toggleSemestre(i)}
                 className={`px-3 py-1.5 rounded-full text-[12.5px] font-semibold !border-0 transition-colors
-                  ${semestresElegidos.has(i) ? 'bg-wine-soft !text-slate-900 dark:!text-white' : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}
+                  ${semestresElegidos.has(i) ? 'bg-indigo-50 dark:bg-indigo-500/15 !text-indigo-700 dark:!text-indigo-300' : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}
               >
                 {label}
               </button>
@@ -196,6 +230,29 @@ export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInic
       )}
       {tipo === 'seleccion' && (
         <div>
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <span className="text-[12.5px] text-slate-500 dark:text-slate-400">Rango rápido:</span>
+            <select
+              value={desdeMes}
+              onChange={e => { setDesdeMes(e.target.value); aplicarRango(e.target.value, hastaMes); }}
+              className="bg-slate-100 dark:bg-white/5 rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-700 dark:text-slate-200 !border-0"
+            >
+              <option value="">Desde</option>
+              {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+            </select>
+            <span className="text-[12.5px] text-slate-400 dark:text-slate-500">→</span>
+            <select
+              value={hastaMes}
+              onChange={e => { setHastaMes(e.target.value); aplicarRango(desdeMes, e.target.value); }}
+              className="bg-slate-100 dark:bg-white/5 rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-700 dark:text-slate-200 !border-0"
+            >
+              <option value="">Hasta</option>
+              {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
+            </select>
+            {desdeMes !== '' && hastaMes !== '' && Number(desdeMes) > Number(hastaMes) && (
+              <span className="text-[11px] text-amber-600 dark:text-amber-400">"Desde" tiene que ser igual o anterior a "Hasta".</span>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2">
             {MESES.map((m, i) => (
               <button
@@ -203,7 +260,7 @@ export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInic
                 type="button"
                 onClick={() => toggleMes(i)}
                 className={`px-3 py-1.5 rounded-full text-[12.5px] font-semibold !border-0 transition-colors
-                  ${mesesElegidos.has(i) ? 'bg-wine-soft !text-slate-900 dark:!text-white' : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}
+                  ${mesesElegidos.has(i) ? 'bg-indigo-50 dark:bg-indigo-500/15 !text-indigo-700 dark:!text-indigo-300' : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}
               >
                 {m}
               </button>
@@ -225,7 +282,7 @@ export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInic
             type="button"
             onClick={() => toggleAnio(a)}
             className={`px-3.5 py-1.5 rounded-md text-[13px] font-semibold !border-0 transition-colors
-              ${anios.has(a) ? 'bg-wine-soft !text-slate-900 dark:!text-white' : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}
+              ${anios.has(a) ? 'bg-indigo-50 dark:bg-indigo-500/15 !text-indigo-700 dark:!text-indigo-300' : 'bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-slate-400'}`}
           >
             {a}
           </button>

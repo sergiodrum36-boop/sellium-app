@@ -39,7 +39,7 @@ function AlertasBell({ alertas = [], cargando = false, onRefrescar, colapsado })
         type="button"
         onClick={() => setAbierto(v => !v)}
         className={
-          'w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm !font-medium transition-colors !border-0 !bg-transparent !text-slate-600 hover:!bg-slate-100 hover:!text-slate-900 dark:!text-slate-300 dark:hover:!bg-slate-800 dark:hover:!text-white' +
+          'w-full flex items-center gap-3 px-3 py-1.5 rounded-md text-sm !font-medium transition-colors !border-0 !bg-transparent !text-slate-600 hover:!bg-slate-100 hover:!text-slate-900 dark:!text-slate-300 dark:hover:!bg-slate-800 dark:hover:!text-white' +
           (colapsado ? ' justify-center px-0' : '')
         }
         title={colapsado ? `Alertas${total > 0 ? ` (${total})` : ''}` : undefined}

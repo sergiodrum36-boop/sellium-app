@@ -1,0 +1,164 @@
+/*
+ * CalendarioVisitas.css
+ * Ajustes visuales de FullCalendar (v6, ver CalendarioVisitas.js) para que
+ * encaje con el resto de la app: colores de marca (indigo #4F46E5), tema
+ * claro/oscuro (mismo mecanismo que el resto de la app: clase "dark" en
+ * <html>, ver Layout.js) y para anular el estilo global de <button> de
+ * index.css (fondo indigo/negrita/radio 10px pensado para los botones de
+ * formulario, no para la barra de herramientas del calendario) — todo
+ * escapado bajo ".calendario-visitas" para no afectar a ningún otro botón
+ * de la aplicación.
+ */
+
+.calendario-visitas .fc {
+  font-size: 0.8rem;
+}
+
+.calendario-visitas .fc-toolbar-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+.dark .calendario-visitas .fc-toolbar-title {
+  color: #f1f5f9;
+}
+
+.calendario-visitas .fc-button {
+  background-color: #e2e8f0 !important;
+  border: none !important;
+  color: #334155 !important;
+  font-weight: 600 !important;
+  border-radius: 10px !important;
+  padding: 6px 12px !important;
+  box-shadow: none !important;
+  text-transform: capitalize;
+}
+.calendario-visitas .fc-button:hover {
+  background-color: #cbd5e1 !important;
+}
+.calendario-visitas .fc-button:disabled {
+  opacity: 0.5;
+}
+.calendario-visitas .fc-button-primary:not(:disabled).fc-button-active,
+.calendario-visitas .fc-button-primary:not(:disabled):active {
+  background-color: #4F46E5 !important;
+  color: #fff !important;
+}
+.dark .calendario-visitas .fc-button {
+  background-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+.dark .calendario-visitas .fc-button:hover {
+  background-color: #475569 !important;
+}
+.dark .calendario-visitas .fc-button-primary:not(:disabled).fc-button-active,
+.dark .calendario-visitas .fc-button-primary:not(:disabled):active {
+  background-color: #4F46E5 !important;
+  color: #fff !important;
+}
+
+.calendario-visitas .fc-scrollgrid,
+.calendario-visitas th,
+.calendario-visitas td {
+  border-color: #e2e8f0 !important;
+}
+.dark .calendario-visitas .fc-scrollgrid,
+.dark .calendario-visitas th,
+.dark .calendario-visitas td {
+  border-color: #334155 !important;
+}
+
+.calendario-visitas .fc-col-header-cell-cushion,
+.calendario-visitas .fc-daygrid-day-number {
+  color: #475569;
+  text-decoration: none;
+}
+.dark .calendario-visitas .fc-col-header-cell-cushion,
+.dark .calendario-visitas .fc-daygrid-day-number {
+  color: #cbd5e1;
+}
+
+.calendario-visitas .fc-day-today {
+  background-color: rgba(79, 70, 229, 0.08) !important;
+}
+.dark .calendario-visitas .fc-day-today {
+  background-color: rgba(79, 70, 229, 0.16) !important;
+}
+
+.calendario-visitas .fc-event {
+  border-radius: 6px;
+  border: none;
+  padding: 1px 4px;
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+
+/* Resalta TODOS los días de un mismo bloque (días consecutivos de un
+ * distribuidor, ver id_bloque en CalendarioVisitas.js) al hacer clic en
+ * cualquiera de ellos, para que quede claro qué se va a mover junto si se
+ * arrastra uno — anillo blanco + sombra, se nota igual en claro/oscuro y
+ * encima de cualquier color de fondo (pendiente/hecha/confirmada). */
+.calendario-visitas .fc-event.bloque-resaltado {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #4F46E5;
+  outline: none;
+  position: relative;
+  z-index: 2;
+}
+.dark .calendario-visitas .fc-event.bloque-resaltado {
+  box-shadow: 0 0 0 2px #0f172a, 0 0 0 4px #818cf8;
+}
+
+/* Modo "Selección por rango" (CalendarioVisitas.js): resalta en ámbar las
+ * visitas marcadas por el último arrastre sobre el calendario — color
+ * distinto del resaltado de bloque (indigo) para no confundir ambos modos. */
+.calendario-visitas .fc-event.seleccion-manual {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #d97706;
+  outline: none;
+  position: relative;
+  z-index: 2;
+}
+.dark .calendario-visitas .fc-event.seleccion-manual {
+  box-shadow: 0 0 0 2px #0f172a, 0 0 0 4px #fbbf24;
+}
+
+/* Franja de fechas resaltada mientras se arrastra para seleccionar un rango
+ * (modo "Selección por rango") — mismo tono ámbar que seleccion-manual. */
+.calendario-visitas .fc-highlight {
+  background-color: rgba(217, 119, 6, 0.15);
+}
+.dark .calendario-visitas .fc-highlight {
+  background-color: rgba(251, 191, 36, 0.18);
+}
+
+.calendario-visitas .fc-list-day-cushion {
+  background-color: #f1f5f9;
+}
+.dark .calendario-visitas .fc-list-day-cushion {
+  background-color: #172338;
+  color: #e2e8f0;
+}
+.dark .calendario-visitas .fc-list,
+.dark .calendario-visitas .fc-list-table {
+  border-color: #334155;
+}
+.dark .calendario-visitas .fc-list-event:hover td {
+  background-color: #1e293b;
+}
+.dark .calendario-visitas .fc-list-event-time,
+.dark .calendario-visitas .fc-list-event-title,
+.dark .calendario-visitas .fc-list-event-graphic {
+  color: #e2e8f0;
+}
+.dark .calendario-visitas .fc-list-empty {
+  background-color: transparent;
+  color: #94a3b8;
+}
+
+.calendario-visitas .fc-timegrid-slot-label,
+.calendario-visitas .fc-timegrid-axis-cushion {
+  color: #64748b;
+}
+.dark .calendario-visitas .fc-timegrid-slot-label,
+.dark .calendario-visitas .fc-timegrid-axis-cushion {
+  color: #94a3b8;
+}

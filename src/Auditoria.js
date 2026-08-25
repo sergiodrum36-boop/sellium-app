@@ -9,7 +9,8 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { getAuditoria } from './firebaseApi';
-import { botonSecundario, thClasses, tdClasses, tarjeta, inputClasses, etiqueta, filtroContenedor } from './uiClasses';
+import { botonSecundario, tarjeta, inputClasses, etiqueta, filtroContenedor } from './uiClasses';
+import TablaOrdenable from './TablaOrdenable';
 
 const ETIQUETA_ACCION = {
   eliminar: 'Borrado (a papelera)',
@@ -84,29 +85,18 @@ function Auditoria({ idUsuario }) {
         {entradasFiltradas.length === 0 ? (
           <p className="text-sm text-slate-500 dark:text-slate-400">No hay entradas de auditoría que coincidan.</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-            <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr>
-                  <th className={thClasses}>Fecha</th>
-                  <th className={thClasses}>Acción</th>
-                  <th className={thClasses}>Colección</th>
-                  <th className={thClasses}>Resumen</th>
-                  <th className={thClasses}>Realizado por</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entradasFiltradas.map(e => (
-                  <tr key={e.id}>
-                    <td className={tdClasses}>{formateadorFecha(e.fecha)}</td>
-                    <td className={`${tdClasses} font-semibold`}>{ETIQUETA_ACCION[e.accion] || e.accion}</td>
-                    <td className={tdClasses}>{ETIQUETA_COLECCION[e.coleccion] || e.coleccion}</td>
-                    <td className={tdClasses}>{e.resumen || '—'}</td>
-                    <td className={tdClasses}>{e.actor_email || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+            <TablaOrdenable
+              filas={entradasFiltradas}
+              keyExtractor={e => e.id}
+              columnas={[
+                { titulo: 'Fecha', valor: e => e.fecha || '', render: e => formateadorFecha(e.fecha) },
+                { titulo: 'Acción', valor: e => ETIQUETA_ACCION[e.accion] || e.accion || '', render: e => <span className="font-semibold">{ETIQUETA_ACCION[e.accion] || e.accion}</span> },
+                { titulo: 'Colección', valor: e => ETIQUETA_COLECCION[e.coleccion] || e.coleccion || '', render: e => ETIQUETA_COLECCION[e.coleccion] || e.coleccion },
+                { titulo: 'Resumen', valor: e => e.resumen || '', render: e => e.resumen || '—' },
+                { titulo: 'Realizado por', valor: e => e.actor_email || '', render: e => e.actor_email || '—' },
+              ]}
+            />
           </div>
         )}
       </div>

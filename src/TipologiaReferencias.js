@@ -65,7 +65,8 @@ import React, { useState, useMemo } from 'react';
 import { Search, Trash2 } from 'lucide-react';
 import { saveTipologiaMarca, deleteDocument } from './firebaseApi';
 import { inferirTipologiaPorNombre } from './tipologia';
-import { inputClasses, thClasses, tdClasses } from './uiClasses';
+import { inputClasses, tdClasses } from './uiClasses';
+import TablaOrdenable from './TablaOrdenable';
 
 const ESTILO_BADGE = {
   Vino: 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400',
@@ -268,23 +269,18 @@ function TipologiaReferencias({ marcas, tipologiasMarca, ventasReales, onTipolog
         />
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr>
-              <th className={thClasses}>Marca</th>
-              <th className={thClasses}>Tipología</th>
-              <th className={thClasses}>Origen</th>
-              <th className={thClasses}>Cambiar a</th>
-              <th className={thClasses}>Eliminar</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filas.length > 0 ? (
-              filas.map(f => (
-                <tr key={f.id}>
-                  <td className={`${tdClasses} font-semibold`}>
-                    {f.nombre}
+      <div className="rounded-lg border border-slate-200 dark:border-slate-700">
+        {filas.length === 0 ? (
+          <p className={`${tdClasses} text-center py-5`}>{busqueda ? 'Ninguna marca coincide con la búsqueda.' : 'No hay marcas todavía.'}</p>
+        ) : (
+          <TablaOrdenable
+            filas={filas}
+            keyExtractor={f => f.id}
+            columnas={[
+              {
+                titulo: 'Marca', valor: f => f.nombre, render: f => (
+                  <>
+                    <span className="font-semibold">{f.nombre}</span>
                     {f.huerfana && (
                       <span
                         className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-50 text-orange-700 dark:bg-orange-500/10 dark:text-orange-400"
@@ -301,12 +297,18 @@ function TipologiaReferencias({ marcas, tipologiasMarca, ventasReales, onTipolog
                     <div className="mt-0.5 font-normal font-mono text-[10px] text-slate-400 dark:text-slate-600">
                       ID: {f.id}
                     </div>
-                  </td>
-                  <td className={tdClasses}><TipologiaBadge tipologia={f.tipologia} /></td>
-                  <td className={`${tdClasses} text-slate-400 dark:text-slate-500`}>
-                    {f.origen === 'manual' ? 'Asignada a mano' : f.origen === 'sugerida' ? 'Sugerida automáticamente' : '—'}
-                  </td>
-                  <td className={tdClasses}>
+                  </>
+                ),
+              },
+              { titulo: 'Tipología', valor: f => f.tipologia || '', render: f => <TipologiaBadge tipologia={f.tipologia} /> },
+              {
+                titulo: 'Origen', valor: f => f.origen || '',
+                claseCelda: 'text-slate-400 dark:text-slate-500',
+                render: f => f.origen === 'manual' ? 'Asignada a mano' : f.origen === 'sugerida' ? 'Sugerida automáticamente' : '—',
+              },
+              {
+                titulo: 'Cambiar a', render: f => (
+                  <>
                     <select
                       value={f.tipologia}
                       onChange={(e) => handleCambiarTipologia(f.id, e.target.value)}
@@ -322,37 +324,34 @@ function TipologiaReferencias({ marcas, tipologiasMarca, ventasReales, onTipolog
                     {guardandoId === f.id && (
                       <span className="ml-2 text-[11px] text-slate-400 dark:text-slate-500">Guardando...</span>
                     )}
-                  </td>
-                  <td className={`${tdClasses} text-center`}>
-                    {f.huerfana ? (
-                      <span className="text-slate-300 dark:text-slate-600" title="No tiene documento en el catálogo que borrar">—</span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleEliminarMarca(f.id, f.nombre)}
-                        disabled={borrandoId === f.id}
-                        title="Eliminar esta marca del catálogo"
-                        className="!bg-transparent !border-0 !text-red-500 hover:!text-red-600 dark:!text-red-400 dark:hover:!text-red-300 disabled:opacity-50 p-1"
-                      >
-                        {borrandoId === f.id ? (
-                          <span className="text-[11px] text-slate-400 dark:text-slate-500">Borrando...</span>
-                        ) : (
-                          <Trash2 size={14} />
-                        )}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="5" className={`${tdClasses} text-center py-5`}>
-                  {busqueda ? 'Ninguna marca coincide con la búsqueda.' : 'No hay marcas todavía.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                  </>
+                ),
+              },
+              {
+                titulo: 'Eliminar', claseCelda: 'text-center',
+                render: f => (
+                  f.huerfana ? (
+                    <span className="text-slate-300 dark:text-slate-600" title="No tiene documento en el catálogo que borrar">—</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleEliminarMarca(f.id, f.nombre)}
+                      disabled={borrandoId === f.id}
+                      title="Eliminar esta marca del catálogo"
+                      className="!bg-transparent !border-0 !text-red-500 hover:!text-red-600 dark:!text-red-400 dark:hover:!text-red-300 disabled:opacity-50 p-1"
+                    >
+                      {borrandoId === f.id ? (
+                        <span className="text-[11px] text-slate-400 dark:text-slate-500">Borrando...</span>
+                      ) : (
+                        <Trash2 size={14} />
+                      )}
+                    </button>
+                  )
+                ),
+              },
+            ]}
+          />
+        )}
       </div>
     </div>
   );

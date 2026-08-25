@@ -6,7 +6,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { unidadesAcuerdo } from './calculosAP';
-import { inputClasses, etiqueta, filtroContenedor, thClasses, tdClasses, tdRightClasses } from './uiClasses';
+import { inputClasses, etiqueta, filtroContenedor, tdClasses } from './uiClasses';
+import TablaOrdenable from './TablaOrdenable';
 
 // --- Función para obtener una lista de años ---
 const getAnosDisponibles = () => {
@@ -145,39 +146,29 @@ function StockDistribuidor({ marcas, historicoSellIn, historicoSellOut, stockIni
         (Stock Final = Stock Inicial + Compras del Año - Salidas del Año)
       </p>
 
-      <div className="overflow-x-auto mt-4 rounded-lg border border-slate-200 dark:border-slate-800">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr>
-              <th className={thClasses}>Marca</th>
-              <th className={thClasses}>STOCK INICIAL (uds)</th>
-              <th className={thClasses}>COMPRAS AÑO (uds)</th>
-              <th className={thClasses}>SALIDAS AÑO (uds)</th>
-              <th className={`${thClasses} !bg-indigo-50 dark:!bg-indigo-500/20 !text-indigo-700 dark:!text-indigo-300`}>STOCK FINAL (uds)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stockCalculado.length > 0 ? (
-              stockCalculado.map(fila => (
-                <tr key={fila.id_marca}>
-                  <td className={`${tdClasses} font-semibold`}>{fila.nombre_marca}</td>
-                  <td className={tdRightClasses}>{Math.round(fila.stock_inicial)}</td>
-                  <td className={tdRightClasses}>{Math.round(fila.compras_ano)}</td>
-                  <td className={tdRightClasses}>{Math.round(fila.salidas_ano)}</td>
-                  <td className={`${tdRightClasses} font-semibold bg-indigo-50/60 dark:bg-indigo-500/20 ${fila.stock_final < 0 ? 'text-red-600 dark:text-red-400' : ''}`}>
-                    {Math.round(fila.stock_final)}
-                  </td>
-                </tr>
-              ))
-            ) : (
-              <tr>
-                <td colSpan="5" className={`${tdClasses} text-center py-5`}>
-                  No hay movimientos de stock registrados para este distribuidor en {anoSeleccionado}.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+      <div className="mt-4 rounded-lg border border-slate-200 dark:border-slate-800">
+        {stockCalculado.length === 0 ? (
+          <p className={`${tdClasses} text-center py-5`}>No hay movimientos de stock registrados para este distribuidor en {anoSeleccionado}.</p>
+        ) : (
+          <TablaOrdenable
+            filas={stockCalculado}
+            keyExtractor={fila => fila.id_marca}
+            columnas={[
+              { titulo: 'Marca', valor: fila => fila.nombre_marca, render: fila => <span className="font-semibold">{fila.nombre_marca}</span> },
+              { titulo: 'STOCK INICIAL (uds)', derecha: true, valor: fila => fila.stock_inicial, render: fila => Math.round(fila.stock_inicial) },
+              { titulo: 'COMPRAS AÑO (uds)', derecha: true, valor: fila => fila.compras_ano, render: fila => Math.round(fila.compras_ano) },
+              { titulo: 'SALIDAS AÑO (uds)', derecha: true, valor: fila => fila.salidas_ano, render: fila => Math.round(fila.salidas_ano) },
+              {
+                titulo: 'STOCK FINAL (uds)', derecha: true, valor: fila => fila.stock_final,
+                claseCabecera: '!bg-indigo-50 dark:!bg-indigo-500/20 !text-indigo-700 dark:!text-indigo-300',
+                claseCelda: 'font-semibold bg-indigo-50/60 dark:bg-indigo-500/20',
+                render: fila => (
+                  <span className={fila.stock_final < 0 ? 'text-red-600 dark:text-red-400' : ''}>{Math.round(fila.stock_final)}</span>
+                ),
+              },
+            ]}
+          />
+        )}
       </div>
     </div>
   );

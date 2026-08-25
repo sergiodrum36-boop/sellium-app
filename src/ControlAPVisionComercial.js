@@ -61,8 +61,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { ChevronDown } from 'lucide-react';
 import { generadoSellIn, gastoTotal } from './calculosAP';
-import { inputClasses, botonSecundario, botonExito, etiqueta, filtroContenedor, thClasses, tdClasses, tdRightClasses, trTotales, kpiCard, kpiTitulo, kpiValor, colorPorSigno } from './uiClasses';
+import { inputClasses, botonSecundario, botonExito, etiqueta, filtroContenedor, tdClasses, tdRightClasses, trTotales, kpiCard, kpiTitulo, kpiValor, colorPorSigno } from './uiClasses';
 import SelectorMesAno from './SelectorMesAno';
+import TablaOrdenable from './TablaOrdenable';
 
 const formateadorMoneda = new Intl.NumberFormat('es-ES', {
   style: 'currency',
@@ -345,56 +346,33 @@ function ControlAPVisionComercial({ idDistribuidor, marcas, listaDistribuidores,
             </button>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
-            <table className="w-full border-collapse text-xs">
-              <thead>
-                <tr>
-                  <th className={thClasses}>Marca</th>
-                  <th className={thClasses}>Uds Compradas (Sell-In)</th>
-                  <th className={thClasses}>A&P GENERADO (€)</th>
-                  <th className={thClasses}>A&P GASTADO (€)</th>
-                  <th className={thClasses}>DIFERENCIA (€)</th>
-                  <th className={thClasses}>% GASTADO / GENERADO</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detallePorMarca.length > 0 ? (
-                  detallePorMarca.map(fila => (
-                    <tr key={fila.id_marca}>
-                      <td className={`${tdClasses} font-semibold`}>{fila.nombre_marca}</td>
-                      <td className={tdRightClasses}>{Math.round(fila.unidades_compradas)}</td>
-                      <td className={tdRightClasses}>{formateadorMoneda.format(fila.ap_generado)}</td>
-                      <td className={tdRightClasses}>{formateadorMoneda.format(fila.ap_gastado)}</td>
-                      <td className={`${tdRightClasses} font-semibold ${colorPorSigno(fila.diferencia)}`}>
-                        {formateadorMoneda.format(fila.diferencia)}
-                      </td>
-                      <td className={`${tdRightClasses} font-semibold ${colorPorSigno(fila.diferencia)}`}>
-                        {formatearPorcentaje(fila.porcentaje)}
-                      </td>
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan="6" className={`${tdClasses} text-center py-5`}>
-                      No hay movimientos de A&P para los filtros seleccionados.
-                    </td>
+          <div className="rounded-lg border border-slate-200 dark:border-slate-800">
+            {detallePorMarca.length === 0 ? (
+              <p className={`${tdClasses} text-center py-5`}>No hay movimientos de A&P para los filtros seleccionados.</p>
+            ) : (
+              <TablaOrdenable
+                filas={detallePorMarca}
+                keyExtractor={fila => fila.id_marca}
+                columnas={[
+                  { titulo: 'Marca', valor: fila => fila.nombre_marca, render: fila => <span className="font-semibold">{fila.nombre_marca}</span> },
+                  { titulo: 'Uds Compradas (Sell-In)', derecha: true, valor: fila => fila.unidades_compradas, render: fila => Math.round(fila.unidades_compradas) },
+                  { titulo: 'A&P GENERADO (€)', derecha: true, valor: fila => fila.ap_generado, render: fila => formateadorMoneda.format(fila.ap_generado) },
+                  { titulo: 'A&P GASTADO (€)', derecha: true, valor: fila => fila.ap_gastado, render: fila => formateadorMoneda.format(fila.ap_gastado) },
+                  { titulo: 'DIFERENCIA (€)', derecha: true, valor: fila => fila.diferencia, render: fila => <span className={`font-semibold ${colorPorSigno(fila.diferencia)}`}>{formateadorMoneda.format(fila.diferencia)}</span> },
+                  { titulo: '% GASTADO / GENERADO', derecha: true, valor: fila => fila.porcentaje ?? 0, render: fila => <span className={`font-semibold ${colorPorSigno(fila.diferencia)}`}>{formatearPorcentaje(fila.porcentaje)}</span> },
+                ]}
+                filaTotales={
+                  <tr className={trTotales}>
+                    <td className={tdClasses}>TOTALES</td>
+                    <td className={tdRightClasses}>{Math.round(kpis.unidades_compradas)}</td>
+                    <td className={tdRightClasses}>{formateadorMoneda.format(kpis.ap_generado)}</td>
+                    <td className={tdRightClasses}>{formateadorMoneda.format(kpis.ap_gastado)}</td>
+                    <td className={`${tdRightClasses} ${colorPorSigno(kpis.diferencia)}`}>{formateadorMoneda.format(kpis.diferencia)}</td>
+                    <td className={`${tdRightClasses} ${colorPorSigno(kpis.diferencia)}`}>{formatearPorcentaje(kpis.porcentaje)}</td>
                   </tr>
-                )}
-
-                <tr className={trTotales}>
-                  <td className={tdClasses}>TOTALES</td>
-                  <td className={tdRightClasses}>{Math.round(kpis.unidades_compradas)}</td>
-                  <td className={tdRightClasses}>{formateadorMoneda.format(kpis.ap_generado)}</td>
-                  <td className={tdRightClasses}>{formateadorMoneda.format(kpis.ap_gastado)}</td>
-                  <td className={`${tdRightClasses} ${colorPorSigno(kpis.diferencia)}`}>
-                    {formateadorMoneda.format(kpis.diferencia)}
-                  </td>
-                  <td className={`${tdRightClasses} ${colorPorSigno(kpis.diferencia)}`}>
-                    {formatearPorcentaje(kpis.porcentaje)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                }
+              />
+            )}
           </div>
         </>
       )}
