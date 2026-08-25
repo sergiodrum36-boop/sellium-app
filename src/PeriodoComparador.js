@@ -58,13 +58,27 @@
  * PantallaDashboardAPCompania.js, DashboardSellOutClientes.js y
  * DashboardSellOutMarcas.js — así que el atajo aparece en las 5 sin tocar
  * nada más (ver [[feedback_reuse_shared_components]]).
+ *
+ * CAMBIO 5 (a petición de Sergio, 2026-08-25, mismo día que CAMBIO 4): se
+ * quita la pestaña "Mes" — un único mes suelto ya se consigue marcando ese
+ * mes en "Varios meses" (que además, a diferencia de la vieja pestaña "Mes",
+ * arranca en el mes actual en vez de fijo en Enero), así que era un modo
+ * redundante. `tipoInicial` por defecto pasa de 'mes' a 'seleccion' — de las
+ * 5 pantallas que usan este componente, las 3 que no pasaban `tipoInicial`
+ * (Ventas Reales, Sell-Out Clientes, Sell-Out Marcas) adoptan este nuevo
+ * default; las 2 que sí lo pasaban explícitamente ("anio", Dashboard de
+ * Gestión y A&P Compañía) no cambian. De paso se corrige el mismo bug de
+ * legibilidad en los <select> de "Desde"/"Hasta" (fondo blanco fijo con
+ * texto claro en modo oscuro, porque les faltaba `dark:[color-scheme:dark]`
+ * — mismo motivo que documenta `inputClasses` en uiClasses.js) usando esa
+ * misma clase compartida en vez de clases sueltas.
  */
 
 import { useState, useEffect } from 'react';
+import { inputClasses } from './uiClasses';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 const TIPOS = [
-  { id: 'mes', label: 'Mes' },
   { id: 'trimestre', label: 'Trimestre' },
   { id: 'semestre', label: 'Semestre' },
   { id: 'anio', label: 'Año completo' },
@@ -86,9 +100,8 @@ function expandirAMeses(indices, tamanoBloque) {
   return [...set].sort((a, b) => a - b);
 }
 
-export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInicial = 'mes', aniosIniciales }) {
+export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInicial = 'seleccion', aniosIniciales }) {
   const [tipo, setTipo] = useState(tipoInicial);
-  const [mes, setMes] = useState(0);
   const [trimestresElegidos, setTrimestresElegidos] = useState(() => new Set([0]));
   const [semestresElegidos, setSemestresElegidos] = useState(() => new Set([0]));
   const [mesesElegidos, setMesesElegidos] = useState(() => new Set([new Date().getMonth()]));
@@ -102,8 +115,7 @@ export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInic
   // `meses` es siempre un array de índices 0-11, sea cual sea el tipo — así
   // el padre solo necesita saber filtrar "¿este mes está en la lista?",
   // nunca comparar contra un mesInicio/mesFin.
-  const mesesActivos = tipo === 'mes' ? [mes]
-    : tipo === 'trimestre' ? expandirAMeses([...trimestresElegidos], 3)
+  const mesesActivos = tipo === 'trimestre' ? expandirAMeses([...trimestresElegidos], 3)
     : tipo === 'semestre' ? expandirAMeses([...semestresElegidos], 6)
     : tipo === 'anio' ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
     : [...mesesElegidos].sort((a, b) => a - b);
@@ -112,7 +124,7 @@ export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInic
     const rangosPorAnio = [...anios].sort().map(anio => ({ anio, meses: mesesActivos }));
     onChange(rangosPorAnio);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tipo, mes, trimestresElegidos, semestresElegidos, mesesElegidos, anios]);
+  }, [tipo, trimestresElegidos, semestresElegidos, mesesElegidos, anios]);
 
   function toggleAnio(a) {
     setAnios(prev => {
@@ -179,15 +191,6 @@ export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInic
         ))}
       </div>
 
-      {tipo === 'mes' && (
-        <select
-          value={mes}
-          onChange={e => setMes(+e.target.value)}
-          className="bg-slate-100 dark:bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-700 dark:text-slate-200 !border-0"
-        >
-          {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
-        </select>
-      )}
       {tipo === 'trimestre' && (
         <div>
           <div className="flex flex-wrap gap-2">
@@ -235,7 +238,7 @@ export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInic
             <select
               value={desdeMes}
               onChange={e => { setDesdeMes(e.target.value); aplicarRango(e.target.value, hastaMes); }}
-              className="bg-slate-100 dark:bg-white/5 rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-700 dark:text-slate-200 !border-0"
+              className={`${inputClasses} !py-1`}
             >
               <option value="">Desde</option>
               {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
@@ -244,7 +247,7 @@ export default function PeriodoComparador({ aniosDisponibles, onChange, tipoInic
             <select
               value={hastaMes}
               onChange={e => { setHastaMes(e.target.value); aplicarRango(desdeMes, e.target.value); }}
-              className="bg-slate-100 dark:bg-white/5 rounded-lg px-2.5 py-1.5 text-[12.5px] text-slate-700 dark:text-slate-200 !border-0"
+              className={`${inputClasses} !py-1`}
             >
               <option value="">Hasta</option>
               {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
