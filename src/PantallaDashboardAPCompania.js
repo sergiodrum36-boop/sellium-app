@@ -44,6 +44,29 @@
  * a PantallaDashboard.js para que ambos dashboards se vean y se manejen
  * igual.
  *
+ * Se añade un 5º KPI, "GASTO MEDIO / BOTELLA" (2026-08-26, a petición
+ * explícita de Sergio: "gasto medio por botella en cada marca"), calculado
+ * como A&P Gastado Total ÷ (Botellas Vendidas + Regaladas + Muestras) del
+ * periodo/filtro actual. El dato de origen (`ventas_uds`/`regaladas_uds`/
+ * `muestras_uds`) ya existía en cada movimiento de Sell-Out desde siempre
+ * (`parserLiquidacion.js`); lo que faltaba era agregarlo por
+ * Distribuidor/Marca/periodo en ESTA pantalla — la de ControlAP.js sigue
+ * siendo por distribuidor individual, esta es la vista agregada de
+ * Compañía que Sergio realmente mira.
+ * NOTA: el denominador aquí (vendidas+regaladas+muestras) es distinto,
+ * A PROPÓSITO Y A PETICIÓN EXPLÍCITA DE SERGIO (26/08/2026), del de "Media
+ * Gasto x Unidad Movida" en ControlAP.js (vendidas+regaladas, excluye
+ * muestras deliberadamente desde su v5.4) — son dos pantallas con criterios
+ * distintos ahora mismo, no un descuido.
+ *
+ * Se añade también un 6º KPI, "STOCK ACTUAL" (2026-08-26, a petición de
+ * Sergio), calculado en `calculosStock.js` (nuevo módulo compartido con
+ * ControlAPVisionComercial.js — ver ese archivo). A PROPÓSITO ignora el
+ * periodo elegido (usa el histórico SIN filtrar por fecha): el Stock es un
+ * saldo a día de hoy, no algo que ocurre "durante" un periodo — solo
+ * respeta los filtros de Distribuidor/Marca, igual que ya hace Stock
+ * Inicial en esta misma pantalla.
+ *
  * CAMBIO (limpieza de menú, a petición de Sergio: el Dashboard de Gestión
  * sin Stock Inicial no le sirve, solo le interesa Compras + Stock Inicial):
  * este componente pasa a ocupar el hueco de "Gestión" en el grupo
@@ -64,7 +87,8 @@ import {
   getStockInicialGeneral
 } from './firebaseApi';
 import { valorRegaladas, valorMuestras, valorAcuerdo, valorAportacionManual, generadoSellIn, gastoTotal } from './calculosAP';
-import { Coins, CreditCard, Scale, Percent } from 'lucide-react';
+import { calcularStockActualPorMarca } from './calculosStock';
+import { Coins, CreditCard, Scale, Percent, Wine, Boxes } from 'lucide-react';
 import { inputClasses, botonPrimario, botonSecundario, botonExito, filtroContenedor, colorPorSigno } from './uiClasses';
 import PeriodoComparador from './PeriodoComparador';
 // Exportar a PDF (resumen ejecutivo de KPIs), a petición de Sergio — ver
@@ -205,7 +229,7 @@ function PantallaDashboardAPCompania({ idUsuario }) {
     return mapa;
   }, [distribuidores]);
 
-  const [kpis, setKpis] = useState({ generado: 0, gastado: 0, diferencia: 0, porcentaje: 0 });
+  const [kpis, setKpis] = useState({ generado: 0, gastado: 0, diferencia: 0, porcentaje: 0, gastoMedioBotella: 0, stockActual: 0 });
   const [datosGrafico1, setDatosGrafico1] = useState([]); // Generado vs Gastado por Marca (top 10)
   const [datosGrafico2, setDatosGrafico2] = useState([]); // Composición del gasto
   const [datosGrafico3, setDatosGrafico3] = useState([]); // Top 5 Distribuidores por gasto
@@ -295,6 +319,12 @@ function PantallaDashboardAPCompania({ idUsuario }) {
     // --- KPIs y composición del gasto ---
     let totalGenerado = 0, totalGastado = 0;
     let totalRegaladas = 0, totalMuestras = 0, totalAcuerdo = 0, totalAportacion = 0;
+    // Botellas "que salen al mercado" (vendidas + regaladas + muestras),
+    // para el KPI "Gasto Medio / Botella" — a petición explícita de Sergio
+    // (26/08/2026) SÍ incluye muestras aquí (a diferencia de "Media Gasto x
+    // Unidad Movida" de ControlAP.js). NO incluye unidades de Acuerdo (ya
+    // tienen su propio precio pactado aparte, ver valorAcuerdo).
+    let totalVentasUds = 0, totalRegaladasUds = 0, totalMuestrasUds = 0;
 
     sellInFiltrado.forEach(mov => { totalGenerado += generadoSellIn(mov); });
     stockInicialFiltrado.forEach(s => { totalGenerado += valorStockInicial(s); });
@@ -304,13 +334,37 @@ function PantallaDashboardAPCompania({ idUsuario }) {
       totalMuestras += valorMuestras(mov);
       totalAcuerdo += valorAcuerdo(mov);
       totalAportacion += valorAportacionManual(mov);
+      totalVentasUds += Number(mov.ventas_uds) || 0;
+      totalRegaladasUds += Number(mov.regaladas_uds) || 0;
+      totalMuestrasUds += Number(mov.muestras_uds) || 0;
+    });
+
+    const unidadesParaMediaBotella = totalVentasUds + totalRegaladasUds + totalMuestrasUds;
+    const gastoMedioBotella = unidadesParaMediaBotella === 0 ? 0 : (totalGastado / unidadesParaMediaBotella);
+
+    // Stock Actual (2026-08-26, a petición de Sergio): Stock Inicial
+    // declarado + Compras - Salidas, acumulado hasta HOY — a propósito
+    // ignora el periodo elegido (rangos/f no se le pasan), solo respeta
+    // Distribuidor/Marca. Usa `sellIn`/`sellOut`/`stockInicial` SIN filtrar
+    // por periodo (los parámetros originales de procesar, no los
+    // *Filtrado de arriba). Ver calculosStock.js para el detalle y por qué
+    // es distinto del criterio de "Gasto Medio / Botella".
+    const { total: stockActualTotal } = calcularStockActualPorMarca({
+      historicoSellIn: sellIn,
+      historicoSellOut: sellOut,
+      stockInicialGeneral: stockInicial,
+      marcas: marcasList,
+      idsDistribuidor: f.id_distribuidor ? [f.id_distribuidor] : [],
+      idMarca: f.id_marca,
     });
 
     setKpis({
       generado: totalGenerado,
       gastado: totalGastado,
       diferencia: totalGenerado - totalGastado,
-      porcentaje: calcularPorcentaje(totalGenerado, totalGastado)
+      porcentaje: calcularPorcentaje(totalGenerado, totalGastado),
+      gastoMedioBotella,
+      stockActual: stockActualTotal
     });
 
     // OJO: por construcción, Regaladas + Muestras + Acuerdo + Aportación
@@ -415,6 +469,8 @@ function PantallaDashboardAPCompania({ idUsuario }) {
       { label: 'A&P Gastado Total', valorBase: formateadorMoneda.format(kpis.gastado) },
       { label: 'Diferencia (Balance)', valorBase: formateadorMoneda.format(kpis.diferencia) },
       { label: '% Gastado / Generado', valorBase: formatearPorcentaje(kpis.porcentaje) },
+      { label: 'Gasto Medio / Botella', valorBase: formateadorMoneda.format(kpis.gastoMedioBotella) },
+      { label: 'Stock Actual (uds)', valorBase: Math.round(kpis.stockActual).toString() },
     ]);
     descargarPdf(doc, `Dashboard_AP_Compania_${new Date().toISOString().slice(0, 10)}.pdf`);
   };
@@ -530,6 +586,20 @@ function PantallaDashboardAPCompania({ idUsuario }) {
           Icon={Percent}
           colorText={colorPorSigno(kpis.diferencia)}
           colorBg={kpis.diferencia < 0 ? 'bg-red-50 dark:bg-red-500/10' : 'bg-emerald-50 dark:bg-emerald-500/10'}
+        />
+        <KpiBox
+          titulo="GASTO MEDIO / BOTELLA"
+          valor={formateadorMoneda.format(kpis.gastoMedioBotella)}
+          Icon={Wine}
+          colorText="text-indigo-600 dark:text-indigo-400"
+          colorBg="bg-indigo-50 dark:bg-indigo-500/10"
+        />
+        <KpiBox
+          titulo="STOCK ACTUAL"
+          valor={`${Math.round(kpis.stockActual).toLocaleString('es-ES')} uds`}
+          Icon={Boxes}
+          colorText={kpis.stockActual < 0 ? 'text-red-600 dark:text-red-400' : 'text-indigo-600 dark:text-indigo-400'}
+          colorBg={kpis.stockActual < 0 ? 'bg-red-50 dark:bg-red-500/10' : 'bg-indigo-50 dark:bg-indigo-500/10'}
         />
       </div>
 

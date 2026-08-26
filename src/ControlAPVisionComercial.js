@@ -1,6 +1,25 @@
 /*
- * ControlAPVisionComercial.js (Versión 1.1)
- * Cambios sobre la 1.0:
+ * ControlAPVisionComercial.js (Versión 1.2)
+ * Cambios sobre la 1.1:
+ *  - Se añade "GASTO MEDIO / BOTELLA" (2026-08-26, a petición de Sergio, ver
+ *    también PantallaDashboardAPCompania.js donde se añadió lo mismo el
+ *    mismo día): A&P Gastado ÷ (Botellas Vendidas + Regaladas + Muestras),
+ *    tomado del Sell-Out — IGUAL de independiente del "Uds Compradas
+ *    (Sell-In)" que ya vive en esta pantalla: ese es el Sell-In con el que
+ *    se compara "A&P Generado", no tiene relación con las botellas que de
+ *    verdad salieron al mercado. Se muestra como KPI adicional y como
+ *    columna en la tabla por marca, igual que en ControlAP.js.
+ *    NOTA: el denominador (vendidas+regaladas+muestras) es distinto, A
+ *    PROPÓSITO Y A PETICIÓN EXPLÍCITA DE SERGIO, del de "Media Gasto x
+ *    Unidad Movida" en ControlAP.js (vendidas+regaladas, excluye muestras
+ *    deliberadamente desde su v5.4).
+ *  - Se añade también "STOCK ACTUAL" (2026-08-26, a petición de Sergio),
+ *    vía `calcularStockActualPorMarca` de `calculosStock.js` (nuevo módulo
+ *    compartido con PantallaDashboardAPCompania.js). A PROPÓSITO ignora el
+ *    filtro Desde/Hasta de esta pantalla — el Stock es un saldo a día de
+ *    hoy, no algo que ocurre "durante" un periodo — solo respeta
+ *    Distribuidor(es)/Marca.
+ * Cambios de la 1.1 sobre la 1.0:
  *  - El Stock Inicial declarado del distribuidor (el que ya tenía en su
  *    almacén al empezar a usar la app, importado desde el Excel de
  *    liquidación) ahora SE SUMA como si fueran unidades compradas de
@@ -59,8 +78,9 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, Boxes } from 'lucide-react';
 import { generadoSellIn, gastoTotal } from './calculosAP';
+import { calcularStockActualPorMarca } from './calculosStock';
 import { inputClasses, botonSecundario, botonExito, etiqueta, filtroContenedor, tdClasses, tdRightClasses, trTotales, kpiCard, kpiTitulo, kpiValor, colorPorSigno } from './uiClasses';
 import SelectorMesAno from './SelectorMesAno';
 import TablaOrdenable from './TablaOrdenable';
@@ -99,6 +119,8 @@ function ControlAPVisionComercial({ idDistribuidor, marcas, listaDistribuidores,
     diferencia: 0,
     porcentaje: 0,
     unidades_compradas: 0,
+    gasto_medio_botella: 0,
+    stock_actual: 0,
   });
   const [detallePorMarca, setDetallePorMarca] = useState([]);
 
@@ -145,6 +167,13 @@ function ControlAPVisionComercial({ idDistribuidor, marcas, listaDistribuidores,
     const generadoPorMarca = new Map();
     const unidadesCompradasPorMarca = new Map();
     const gastadoPorMarca = new Map();
+    // Botellas que salen al mercado por Sell-Out (vendidas + regaladas +
+    // muestras), para "GASTO MEDIO / BOTELLA" — no tiene relación con "Uds
+    // Compradas (Sell-In)" de más arriba, son dos cosas distintas (ver
+    // cabecera).
+    const ventasUdsPorMarca = new Map();
+    const regaladasUdsPorMarca = new Map();
+    const muestrasUdsPorMarca = new Map();
 
     movSellInFiltrados.forEach(mov => {
       const totalGeneradoActual = generadoPorMarca.get(mov.id_marca) || 0;
@@ -172,9 +201,19 @@ function ControlAPVisionComercial({ idDistribuidor, marcas, listaDistribuidores,
     movSellOutFiltrados.forEach(mov => {
       const totalGastoActual = gastadoPorMarca.get(mov.id_marca) || 0;
       gastadoPorMarca.set(mov.id_marca, totalGastoActual + gastoTotal(mov));
+
+      const totalVentasActual = ventasUdsPorMarca.get(mov.id_marca) || 0;
+      ventasUdsPorMarca.set(mov.id_marca, totalVentasActual + (Number(mov.ventas_uds) || 0));
+
+      const totalRegaladasActual = regaladasUdsPorMarca.get(mov.id_marca) || 0;
+      regaladasUdsPorMarca.set(mov.id_marca, totalRegaladasActual + (Number(mov.regaladas_uds) || 0));
+
+      const totalMuestrasActual = muestrasUdsPorMarca.get(mov.id_marca) || 0;
+      muestrasUdsPorMarca.set(mov.id_marca, totalMuestrasActual + (Number(mov.muestras_uds) || 0));
     });
 
     let kpiGeneradoTotal = 0, kpiGastoTotal = 0, kpiUnidadesCompradasTotal = 0;
+    let kpiVentasUdsTotal = 0, kpiRegaladasUdsTotal = 0, kpiMuestrasUdsTotal = 0;
 
     const detalleFinal = marcas.map(marca => {
       if (filtros.id_marca && marca.id !== filtros.id_marca) {
@@ -183,10 +222,18 @@ function ControlAPVisionComercial({ idDistribuidor, marcas, listaDistribuidores,
       const ap_generado = generadoPorMarca.get(marca.id) || 0;
       const ap_gastado = gastadoPorMarca.get(marca.id) || 0;
       const unidades_compradas = unidadesCompradasPorMarca.get(marca.id) || 0;
+      const ventas_uds = ventasUdsPorMarca.get(marca.id) || 0;
+      const regaladas_uds = regaladasUdsPorMarca.get(marca.id) || 0;
+      const muestras_uds = muestrasUdsPorMarca.get(marca.id) || 0;
+      const unidadesParaMediaBotella = ventas_uds + regaladas_uds + muestras_uds;
+      const gasto_medio_botella = unidadesParaMediaBotella === 0 ? 0 : (ap_gastado / unidadesParaMediaBotella);
 
       kpiGeneradoTotal += ap_generado;
       kpiGastoTotal += ap_gastado;
       kpiUnidadesCompradasTotal += unidades_compradas;
+      kpiVentasUdsTotal += ventas_uds;
+      kpiRegaladasUdsTotal += regaladas_uds;
+      kpiMuestrasUdsTotal += muestras_uds;
 
       return {
         id_marca: marca.id,
@@ -196,8 +243,28 @@ function ControlAPVisionComercial({ idDistribuidor, marcas, listaDistribuidores,
         diferencia: ap_generado - ap_gastado,
         porcentaje: calcularPorcentaje(ap_generado, ap_gastado),
         unidades_compradas,
+        gasto_medio_botella,
       };
     }).filter(Boolean);
+
+    const kpiUnidadesParaMediaBotellaTotal = kpiVentasUdsTotal + kpiRegaladasUdsTotal + kpiMuestrasUdsTotal;
+    const kpiGastoMedioBotellaTotal = kpiUnidadesParaMediaBotellaTotal === 0 ? 0 : (kpiGastoTotal / kpiUnidadesParaMediaBotellaTotal);
+
+    // Stock Actual (2026-08-26, a petición de Sergio): Stock Inicial
+    // declarado + Compras - Salidas, acumulado hasta HOY — a propósito
+    // ignora el filtro de fechas (Desde/Hasta) de esta pantalla, usa
+    // historicoSellInGeneral/historicoSellOutGeneral/stockInicialGeneral
+    // SIN el filtro matchFechaInicio/matchFechaFin aplicado. Solo respeta
+    // Distribuidor(es)/Marca. Ver calculosStock.js (compartido con
+    // PantallaDashboardAPCompania.js) para el detalle.
+    const { total: stockActualTotal } = calcularStockActualPorMarca({
+      historicoSellIn: historicoSellInGeneral,
+      historicoSellOut: historicoSellOutGeneral,
+      stockInicialGeneral: stockInicialGeneral,
+      marcas,
+      idsDistribuidor: idsDistribuidorSel,
+      idMarca: filtros.id_marca,
+    });
 
     setKpis({
       ap_generado: kpiGeneradoTotal,
@@ -205,6 +272,8 @@ function ControlAPVisionComercial({ idDistribuidor, marcas, listaDistribuidores,
       diferencia: kpiGeneradoTotal - kpiGastoTotal,
       porcentaje: calcularPorcentaje(kpiGeneradoTotal, kpiGastoTotal),
       unidades_compradas: kpiUnidadesCompradasTotal,
+      gasto_medio_botella: kpiGastoMedioBotellaTotal,
+      stock_actual: stockActualTotal,
     });
 
     setDetallePorMarca(detalleFinal.filter(
@@ -250,7 +319,7 @@ function ControlAPVisionComercial({ idDistribuidor, marcas, listaDistribuidores,
     ];
 
     const tableHeader = [
-      "Marca", "Uds Compradas (Sell-In)", "A&P Generado (€)", "A&P Gastado (€)", "Diferencia (€)", "% Gastado/Generado"
+      "Marca", "Uds Compradas (Sell-In)", "A&P Generado (€)", "A&P Gastado (€)", "Diferencia (€)", "% Gastado/Generado", "Gasto Medio / Botella (€)"
     ];
 
     const tableBody = detallePorMarca.map(fila => ([
@@ -259,7 +328,8 @@ function ControlAPVisionComercial({ idDistribuidor, marcas, listaDistribuidores,
       fila.ap_generado.toFixed(2),
       fila.ap_gastado.toFixed(2),
       fila.diferencia.toFixed(2),
-      formatearPorcentaje(fila.porcentaje)
+      formatearPorcentaje(fila.porcentaje),
+      fila.gasto_medio_botella.toFixed(2)
     ]));
 
     const tableTotals = [[
@@ -268,12 +338,19 @@ function ControlAPVisionComercial({ idDistribuidor, marcas, listaDistribuidores,
       kpis.ap_generado.toFixed(2),
       kpis.ap_gastado.toFixed(2),
       kpis.diferencia.toFixed(2),
-      formatearPorcentaje(kpis.porcentaje)
+      formatearPorcentaje(kpis.porcentaje),
+      kpis.gasto_medio_botella.toFixed(2)
     ]];
 
-    const finalData = [ ...header, tableHeader, ...tableBody, tableTotals ];
+    // Stock Actual: fila aparte al final (no es una columna por marca en
+    // esta tabla — no depende de las mismas filas/orden que detallePorMarca,
+    // que solo incluye marcas con movimiento en el periodo filtrado, y
+    // Stock Actual ignora el periodo). Se añade como nota informativa.
+    const stockNota = [[], ["Stock Actual (uds, a día de hoy, ignora Desde/Hasta):", Math.round(kpis.stock_actual)]];
+
+    const finalData = [ ...header, tableHeader, ...tableBody, tableTotals, ...stockNota ];
     const worksheet = XLSX.utils.aoa_to_sheet(finalData);
-    worksheet['!cols'] = [ {wch:30}, {wch:20}, {wch:18}, {wch:18}, {wch:18}, {wch:18} ];
+    worksheet['!cols'] = [ {wch:30}, {wch:20}, {wch:18}, {wch:18}, {wch:18}, {wch:18}, {wch:22} ];
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Vision Compañia AP");
@@ -337,6 +414,12 @@ function ControlAPVisionComercial({ idDistribuidor, marcas, listaDistribuidores,
             <KpiBox titulo="A&P GASTADO (Sell-Out)" valor={formateadorMoneda.format(kpis.ap_gastado)} colorClass={colorPorSigno(kpis.diferencia)} />
             <KpiBox titulo="DIFERENCIA (Filtrado)" valor={formateadorMoneda.format(kpis.diferencia)} colorClass={colorPorSigno(kpis.diferencia)} />
             <KpiBox titulo="% GASTADO / GENERADO" valor={formatearPorcentaje(kpis.porcentaje)} colorClass={colorPorSigno(kpis.diferencia)} />
+            <KpiBox titulo="GASTO MEDIO / BOTELLA" valor={formateadorMoneda.format(kpis.gasto_medio_botella)} />
+            <KpiBox
+              titulo="STOCK ACTUAL"
+              valor={`${Math.round(kpis.stock_actual).toLocaleString('es-ES')} uds`}
+              colorClass={kpis.stock_actual < 0 ? 'text-red-600 dark:text-red-400' : undefined}
+            />
           </div>
 
           <div className="flex justify-between items-center mb-3">
@@ -360,6 +443,7 @@ function ControlAPVisionComercial({ idDistribuidor, marcas, listaDistribuidores,
                   { titulo: 'A&P GASTADO (€)', derecha: true, valor: fila => fila.ap_gastado, render: fila => formateadorMoneda.format(fila.ap_gastado) },
                   { titulo: 'DIFERENCIA (€)', derecha: true, valor: fila => fila.diferencia, render: fila => <span className={`font-semibold ${colorPorSigno(fila.diferencia)}`}>{formateadorMoneda.format(fila.diferencia)}</span> },
                   { titulo: '% GASTADO / GENERADO', derecha: true, valor: fila => fila.porcentaje ?? 0, render: fila => <span className={`font-semibold ${colorPorSigno(fila.diferencia)}`}>{formatearPorcentaje(fila.porcentaje)}</span> },
+                  { titulo: 'GASTO MEDIO / BOTELLA (€)', derecha: true, valor: fila => fila.gasto_medio_botella, render: fila => formateadorMoneda.format(fila.gasto_medio_botella) },
                 ]}
                 filaTotales={
                   <tr className={trTotales}>
@@ -369,6 +453,7 @@ function ControlAPVisionComercial({ idDistribuidor, marcas, listaDistribuidores,
                     <td className={tdRightClasses}>{formateadorMoneda.format(kpis.ap_gastado)}</td>
                     <td className={`${tdRightClasses} ${colorPorSigno(kpis.diferencia)}`}>{formateadorMoneda.format(kpis.diferencia)}</td>
                     <td className={`${tdRightClasses} ${colorPorSigno(kpis.diferencia)}`}>{formatearPorcentaje(kpis.porcentaje)}</td>
+                    <td className={tdRightClasses}>{formateadorMoneda.format(kpis.gasto_medio_botella)}</td>
                   </tr>
                 }
               />
