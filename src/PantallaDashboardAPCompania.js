@@ -86,7 +86,7 @@ import {
   getHistoricoSellOutGeneral,
   getStockInicialGeneral
 } from './firebaseApi';
-import { valorRegaladas, valorMuestras, valorAcuerdo, valorAportacionManual, generadoSellIn, gastoTotal } from './calculosAP';
+import { valorRegaladas, valorMuestras, valorAcuerdo, valorAportacionManual, generadoSellIn, gastoTotal, unidadesAcuerdo } from './calculosAP';
 import { calcularStockActualPorMarca } from './calculosStock';
 import { Coins, CreditCard, Scale, Percent, Wine, Boxes } from 'lucide-react';
 import { inputClasses, botonPrimario, botonSecundario, botonExito, filtroContenedor, colorPorSigno } from './uiClasses';
@@ -323,8 +323,12 @@ function PantallaDashboardAPCompania({ idUsuario }) {
     // para el KPI "Gasto Medio / Botella" — a petición explícita de Sergio
     // (26/08/2026) SÍ incluye muestras aquí (a diferencia de "Media Gasto x
     // Unidad Movida" de ControlAP.js). NO incluye unidades de Acuerdo (ya
-    // tienen su propio precio pactado aparte, ver valorAcuerdo).
-    let totalVentasUds = 0, totalRegaladasUds = 0, totalMuestrasUds = 0;
+    // tienen su propio precio pactado aparte, ver valorAcuerdo). Aparte se
+    // trackea `totalAcuerdoUds` (unidades de Acuerdo) para poder mostrar
+    // "Unidades" en "Composición del A&P Gastado" (2026-08-26, a petición
+    // de Sergio) — ahí SÍ interesa esa partida por separado, es solo el
+    // denominador de Gasto Medio/Botella el que la excluye a propósito.
+    let totalVentasUds = 0, totalRegaladasUds = 0, totalMuestrasUds = 0, totalAcuerdoUds = 0;
 
     sellInFiltrado.forEach(mov => { totalGenerado += generadoSellIn(mov); });
     stockInicialFiltrado.forEach(s => { totalGenerado += valorStockInicial(s); });
@@ -337,6 +341,7 @@ function PantallaDashboardAPCompania({ idUsuario }) {
       totalVentasUds += Number(mov.ventas_uds) || 0;
       totalRegaladasUds += Number(mov.regaladas_uds) || 0;
       totalMuestrasUds += Number(mov.muestras_uds) || 0;
+      totalAcuerdoUds += unidadesAcuerdo(mov);
     });
 
     const unidadesParaMediaBotella = totalVentasUds + totalRegaladasUds + totalMuestrasUds;
@@ -371,11 +376,15 @@ function PantallaDashboardAPCompania({ idUsuario }) {
     // directa DEBE sumar exactamente el mismo total que "A&P GASTADO TOTAL"
     // (son las mismas 4 partidas que componen gastoTotal) — el Stock
     // Inicial no interviene aquí, solo afecta al lado del Generado.
+    // `unidades: null` en Aportación directa a propósito — es una
+    // aportación monetaria puntual (aportacion_euros), no tiene botellas
+    // asociadas, así que no hay unidad que mostrar (el PDF la imprime como
+    // "—", ver handleExportarPdf).
     setDatosGrafico2([
-      { name: 'Regaladas', value: totalRegaladas },
-      { name: 'Muestras', value: totalMuestras },
-      { name: 'Acuerdo', value: totalAcuerdo },
-      { name: 'Aportación directa', value: totalAportacion },
+      { name: 'Regaladas', value: totalRegaladas, unidades: totalRegaladasUds },
+      { name: 'Muestras', value: totalMuestras, unidades: totalMuestrasUds },
+      { name: 'Acuerdo', value: totalAcuerdo, unidades: totalAcuerdoUds },
+      { name: 'Aportación directa', value: totalAportacion, unidades: null },
     ]);
 
     // --- Por marca (Gráfico 1): top 10 por A&P Generado (Sell-In + Stock Inicial) ---
@@ -508,15 +517,19 @@ function PantallaDashboardAPCompania({ idUsuario }) {
       );
     }
 
-    // --- Composición del A&P Gastado ---
+    // --- Composición del A&P Gastado --- (columna "Unidades" añadida
+    // 2026-08-26 a petición de Sergio: cuántas botellas componen cada
+    // importe en €, no solo el € en sí. "Aportación directa" imprime "—"
+    // porque es una aportación monetaria puntual sin botellas asociadas.)
     if (datosGrafico2.length > 0) {
       const totalComposicion = datosGrafico2.reduce((acc, d) => acc + d.value, 0);
       y = añadirTituloSeccion(doc, 'Composición del A&P Gastado', y + 10);
       y = añadirTablaGenerica(
         doc,
-        ['Categoría', 'Importe (€)', '% del Gasto'],
+        ['Categoría', 'Unidades', 'Importe (€)', '% del Gasto'],
         datosGrafico2.map(d => [
           d.name,
+          d.unidades == null ? '—' : Math.round(d.unidades).toLocaleString('es-ES'),
           formateadorMoneda.format(d.value),
           totalComposicion === 0 ? '—' : `${((d.value / totalComposicion) * 100).toFixed(1)}%`,
         ]),
