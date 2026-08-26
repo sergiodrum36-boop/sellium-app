@@ -93,7 +93,7 @@ import { inputClasses, botonPrimario, botonSecundario, botonExito, filtroContene
 import PeriodoComparador from './PeriodoComparador';
 // Exportar a PDF (resumen ejecutivo de KPIs), a petición de Sergio — ver
 // pdfExport.js.
-import { crearDocumentoPdf, añadirTablaKpis, descargarPdf } from './pdfExport';
+import { crearDocumentoPdf, añadirTablaKpis, descargarPdf, añadirTituloSeccion, añadirTablaGenerica, describirPeriodo } from './pdfExport';
 
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, PieChart, Pie, Cell, LineChart, Line,
@@ -459,20 +459,107 @@ function PantallaDashboardAPCompania({ idUsuario }) {
     procesar(rawSellIn, rawSellOut, rawStockInicial, def, rangosPorAnio, mapaMarcas, mapaDistribuidores, marcas);
   };
 
-  // Exportar a PDF (resumen ejecutivo de los 4 KPIs, ver pdfExport.js) — a
-  // petición de Sergio. Mismo patrón que PantallaDashboard.js.
+  // Exportar a PDF — INFORME completo (2026-08-26, a petición de Sergio:
+  // el PDF anterior era solo la tabla de 6 KPIs, sin desglose ni indicar
+  // qué Distribuidor/Marca/Periodo estaba filtrado — si lo exportaba con
+  // una marca concreta seleccionada, el PDF no lo reflejaba en ningún
+  // sitio). Ahora reproduce, como tablas, TODO lo que ya se ve en pantalla:
+  // KPIs + desglose por Marca + composición del gasto + por Distribuidor +
+  // evolución mensual — usando los mismos `datosGraficoN` que ya alimentan
+  // los gráficos, así que el informe queda automáticamente coherente con
+  // lo que Sergio está mirando (mismos filtros de Distribuidor/Marca/
+  // Periodo ya aplicados, sin recalcular nada aparte). Ver pdfExport.js
+  // para los helpers nuevos (añadirTituloSeccion/añadirTablaGenerica/
+  // describirPeriodo).
   const handleExportarPdf = () => {
-    const años = rangosPorAnio.map(r => r.anio).join(', ');
-    const doc = crearDocumentoPdf('Dashboard A&P Visión Compañía', años ? `Años: ${años}` : undefined);
-    añadirTablaKpis(doc, [
+    const doc = crearDocumentoPdf('Dashboard de Gestión', [
+      `Distribuidor: ${distribuidorSeleccionadoGestion || 'Todos'}`,
+      `Marca: ${marcaSeleccionada || 'Todas'}`,
+      `Periodo: ${describirPeriodo(rangosPorAnio) || '—'}`,
+      rangoDisponible ? `Histórico cargado desde ${rangoDisponible.min} hasta ${rangoDisponible.max}` : null,
+    ]);
+
+    // --- KPIs Principales ---
+    let y = añadirTablaKpis(doc, [
       { label: 'A&P Generado Total', valorBase: formateadorMoneda.format(kpis.generado) },
       { label: 'A&P Gastado Total', valorBase: formateadorMoneda.format(kpis.gastado) },
       { label: 'Diferencia (Balance)', valorBase: formateadorMoneda.format(kpis.diferencia) },
       { label: '% Gastado / Generado', valorBase: formatearPorcentaje(kpis.porcentaje) },
       { label: 'Gasto Medio / Botella', valorBase: formateadorMoneda.format(kpis.gastoMedioBotella) },
-      { label: 'Stock Actual (uds)', valorBase: Math.round(kpis.stockActual).toString() },
+      { label: 'Stock Actual (uds)', valorBase: Math.round(kpis.stockActual).toLocaleString('es-ES') },
     ]);
-    descargarPdf(doc, `Dashboard_AP_Compania_${new Date().toISOString().slice(0, 10)}.pdf`);
+
+    // --- Desglose por Marca (mismos datos que el gráfico "A&P Generado
+    // vs. Gastado por Marca" — si hay una Marca filtrada, esta tabla sale
+    // con una única fila: el "estudio de esa marca concreta"). ---
+    if (datosGrafico1.length > 0) {
+      y = añadirTituloSeccion(doc, `Desglose por Marca${datosGrafico1.length === 10 ? ' (Top 10)' : ''}`, y + 10);
+      y = añadirTablaGenerica(
+        doc,
+        ['Marca', 'A&P Generado (€)', 'A&P Gastado (€)', 'Diferencia (€)', '% Gastado/Generado'],
+        datosGrafico1.map(d => [
+          d.nombre,
+          formateadorMoneda.format(d.generado),
+          formateadorMoneda.format(d.gastado),
+          formateadorMoneda.format(d.generado - d.gastado),
+          formatearPorcentaje(calcularPorcentaje(d.generado, d.gastado)),
+        ]),
+        y
+      );
+    }
+
+    // --- Composición del A&P Gastado ---
+    if (datosGrafico2.length > 0) {
+      const totalComposicion = datosGrafico2.reduce((acc, d) => acc + d.value, 0);
+      y = añadirTituloSeccion(doc, 'Composición del A&P Gastado', y + 10);
+      y = añadirTablaGenerica(
+        doc,
+        ['Categoría', 'Importe (€)', '% del Gasto'],
+        datosGrafico2.map(d => [
+          d.name,
+          formateadorMoneda.format(d.value),
+          totalComposicion === 0 ? '—' : `${((d.value / totalComposicion) * 100).toFixed(1)}%`,
+        ]),
+        y
+      );
+    }
+
+    // --- Top Distribuidores por A&P Gastado ---
+    if (datosGrafico3.length > 0) {
+      y = añadirTituloSeccion(doc, `Top Distribuidores por A&P Gastado${datosGrafico3.length === 5 ? ' (Top 5)' : ''}`, y + 10);
+      y = añadirTablaGenerica(
+        doc,
+        ['Distribuidor', 'A&P Gastado (€)'],
+        datosGrafico3.map(d => [d.nombre, formateadorMoneda.format(d.gasto)]),
+        y
+      );
+    }
+
+    // --- Evolución Mensual (Sell-In/Sell-Out; el Stock Inicial no tiene
+    // mes al que asignarse, ver cabecera del archivo) ---
+    if (datosGrafico4.length > 0) {
+      y = añadirTituloSeccion(doc, 'Evolución Mensual', y + 10);
+      añadirTablaGenerica(
+        doc,
+        ['Mes', 'A&P Generado (€)', 'A&P Gastado (€)', 'Diferencia (€)'],
+        datosGrafico4.map(d => [
+          d.mes,
+          formateadorMoneda.format(d.generado),
+          formateadorMoneda.format(d.gastado),
+          formateadorMoneda.format(d.generado - d.gastado),
+        ]),
+        y
+      );
+    }
+
+    // Nombre de fichero: si hay Marca/Distribuidor filtrado, se refleja en
+    // el nombre (p.ej. para poder mandar "el informe de Palomo Cojo DO
+    // Rueda" sin tener que renombrarlo a mano).
+    const partesNombre = ['Dashboard_Gestion'];
+    if (distribuidorSeleccionadoGestion) partesNombre.push(distribuidorSeleccionadoGestion.replace(/[^a-zA-Z0-9]+/g, '_').substring(0, 25));
+    if (marcaSeleccionada) partesNombre.push(marcaSeleccionada.replace(/[^a-zA-Z0-9]+/g, '_').substring(0, 25));
+    partesNombre.push(new Date().toISOString().slice(0, 10));
+    descargarPdf(doc, `${partesNombre.join('_')}.pdf`);
   };
 
   // TARJETAS INTERACTIVAS: clic en una barra de "A&P Generado vs. Gastado
